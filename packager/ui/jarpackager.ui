@@ -1,0 +1,754 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>JarPackagerWindow</class>
+ <widget class="QMainWindow" name="JarPackagerWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>700</width>
+    <height>913</height>
+   </rect>
+  </property>
+  <property name="minimumSize">
+   <size>
+    <width>500</width>
+    <height>600</height>
+   </size>
+  </property>
+  <property name="windowTitle">
+   <string>JAR Packager - Qt6版本</string>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QVBoxLayout" name="mainLayout">
+    <property name="leftMargin">
+     <number>10</number>
+    </property>
+    <property name="topMargin">
+     <number>10</number>
+    </property>
+    <property name="rightMargin">
+     <number>10</number>
+    </property>
+    <property name="bottomMargin">
+     <number>10</number>
+    </property>
+    <item>
+     <widget class="QSplitter" name="mainSplitter">
+      <property name="orientation">
+       <enum>Qt::Orientation::Vertical</enum>
+      </property>
+      <widget class="QWidget" name="topWidget">
+       <layout class="QVBoxLayout" name="topLayout">
+        <property name="leftMargin">
+         <number>0</number>
+        </property>
+        <property name="topMargin">
+         <number>0</number>
+        </property>
+        <property name="rightMargin">
+         <number>0</number>
+        </property>
+        <property name="bottomMargin">
+         <number>0</number>
+        </property>
+        <item>
+         <widget class="QTabWidget" name="settingsTab">
+          <property name="currentIndex">
+           <number>0</number>
+          </property>
+          <widget class="QWidget" name="basicSettings">
+           <attribute name="title">
+            <string>⚙️ 基本设置</string>
+           </attribute>
+           <layout class="QVBoxLayout" name="basicLayout">
+            <item>
+             <widget class="QWidget" name="jarWidget" native="true">
+              <property name="maximumSize">
+               <size>
+                <width>16777215</width>
+                <height>70</height>
+               </size>
+              </property>
+              <layout class="QVBoxLayout" name="jarVerticalLayout">
+               <property name="leftMargin">
+                <number>0</number>
+               </property>
+               <property name="topMargin">
+                <number>0</number>
+               </property>
+               <property name="rightMargin">
+                <number>0</number>
+               </property>
+               <property name="bottomMargin">
+                <number>0</number>
+               </property>
+               <item>
+                <widget class="QLabel" name="jarLabel">
+                 <property name="text">
+                  <string>JAR文件:</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QWidget" name="jarInnerWidget" native="true">
+                 <layout class="QHBoxLayout" name="jarLayout">
+                  <property name="leftMargin">
+                   <number>0</number>
+                  </property>
+                  <property name="topMargin">
+                   <number>0</number>
+                  </property>
+                  <property name="rightMargin">
+                   <number>0</number>
+                  </property>
+                  <property name="bottomMargin">
+                   <number>0</number>
+                  </property>
+                  <item>
+                   <widget class="QLineEdit" name="jarEdit"/>
+                  </item>
+                  <item>
+                   <widget class="QPushButton" name="jarBtn">
+                    <property name="maximumSize">
+                     <size>
+                      <width>100</width>
+                      <height>16777215</height>
+                     </size>
+                    </property>
+                    <property name="text">
+                     <string>选择JAR</string>
+                    </property>
+                   </widget>
+                  </item>
+                 </layout>
+                </widget>
+               </item>
+              </layout>
+             </widget>
+            </item>
+            <item>
+             <widget class="QWidget" name="outputWidget" native="true">
+              <property name="maximumSize">
+               <size>
+                <width>16777215</width>
+                <height>70</height>
+               </size>
+              </property>
+              <layout class="QVBoxLayout" name="outputVerticalLayout">
+               <property name="leftMargin">
+                <number>0</number>
+               </property>
+               <property name="topMargin">
+                <number>0</number>
+               </property>
+               <property name="rightMargin">
+                <number>0</number>
+               </property>
+               <property name="bottomMargin">
+                <number>0</number>
+               </property>
+               <item>
+                <widget class="QLabel" name="outputLabel">
+                 <property name="text">
+                  <string>输出EXE文件:</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QWidget" name="outputInnerWidget" native="true">
+                 <layout class="QHBoxLayout" name="outputLayout">
+                  <property name="leftMargin">
+                   <number>0</number>
+                  </property>
+                  <property name="topMargin">
+                   <number>0</number>
+                  </property>
+                  <property name="rightMargin">
+                   <number>0</number>
+                  </property>
+                  <property name="bottomMargin">
+                   <number>0</number>
+                  </property>
+                  <item>
+                   <widget class="QLineEdit" name="outEdit"/>
+                  </item>
+                  <item>
+                   <widget class="QPushButton" name="outBtn">
+                    <property name="maximumSize">
+                     <size>
+                      <width>120</width>
+                      <height>16777215</height>
+                     </size>
+                    </property>
+                    <property name="text">
+                     <string>选择输出文件</string>
+                    </property>
+                   </widget>
+                  </item>
+                 </layout>
+                </widget>
+               </item>
+              </layout>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+          <widget class="QWidget" name="runtimeSettings">
+           <attribute name="title">
+            <string>▶️ 运行设置</string>
+           </attribute>
+           <layout class="QVBoxLayout" name="runtimeLayout">
+            <item>
+             <widget class="QLabel" name="jvmArgsLabel">
+              <property name="text">
+               <string>JVM参数 (;分隔):</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLineEdit" name="jvmArgsEdit"/>
+            </item>
+            <item>
+             <widget class="QLabel" name="progArgsLabel">
+              <property name="text">
+               <string>程序参数 (;分隔):</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLineEdit" name="progArgsEdit"/>
+            </item>
+            <item>
+             <widget class="QWidget" name="javaPathWidget" native="true">
+              <property name="maximumSize">
+               <size>
+                <width>16777215</width>
+                <height>70</height>
+               </size>
+              </property>
+              <layout class="QVBoxLayout" name="javaPathVerticalLayout">
+               <property name="leftMargin">
+                <number>0</number>
+               </property>
+               <property name="topMargin">
+                <number>0</number>
+               </property>
+               <property name="rightMargin">
+                <number>0</number>
+               </property>
+               <property name="bottomMargin">
+                <number>0</number>
+               </property>
+               <item>
+                <widget class="QLabel" name="javaPathLabel">
+                 <property name="text">
+                  <string>Java路径:</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QWidget" name="javaPathInnerWidget" native="true">
+                 <layout class="QHBoxLayout" name="javalayout">
+                  <property name="leftMargin">
+                   <number>0</number>
+                  </property>
+                  <property name="topMargin">
+                   <number>0</number>
+                  </property>
+                  <property name="rightMargin">
+                   <number>0</number>
+                  </property>
+                  <property name="bottomMargin">
+                   <number>0</number>
+                  </property>
+                  <item>
+                   <widget class="QLineEdit" name="javaPathEdit"/>
+                  </item>
+                  <item>
+                   <widget class="QPushButton" name="javaPathBtn">
+                    <property name="maximumSize">
+                     <size>
+                      <width>120</width>
+                      <height>16777215</height>
+                     </size>
+                    </property>
+                    <property name="text">
+                     <string>选择Java路径</string>
+                    </property>
+                   </widget>
+                  </item>
+                 </layout>
+                </widget>
+               </item>
+              </layout>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="jarExtractPathLabel">
+              <property name="text">
+               <string>Jar解压路径 (支持 $ENV{} 包裹环境变量):</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLineEdit" name="jarExtractPathEdit"/>
+            </item>
+            <item>
+             <widget class="QGroupBox" name="modeGroupBox">
+              <property name="title">
+               <string>启动模式</string>
+              </property>
+              <layout class="QHBoxLayout" name="modeLayout">
+               <item>
+                <widget class="QRadioButton" name="modeJava">
+                 <property name="text">
+                  <string>java.exe</string>
+                 </property>
+                 <property name="checked">
+                  <bool>true</bool>
+                 </property>
+                 <attribute name="buttonGroup">
+                  <string notr="true">modeButtonGroup</string>
+                 </attribute>
+                </widget>
+               </item>
+               <item>
+                <widget class="QRadioButton" name="modeJvm">
+                 <property name="text">
+                  <string>direct_jvm</string>
+                 </property>
+                 <attribute name="buttonGroup">
+                  <string notr="true">modeButtonGroup</string>
+                 </attribute>
+                </widget>
+               </item>
+               <item>
+                <spacer name="modeSpacerH">
+                 <property name="orientation">
+                  <enum>Qt::Orientation::Horizontal</enum>
+                 </property>
+                 <property name="sizeHint" stdset="0">
+                  <size>
+                   <width>40</width>
+                   <height>20</height>
+                  </size>
+                 </property>
+                </spacer>
+               </item>
+              </layout>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="javaVersionLabel">
+              <property name="text">
+               <string>Java版本:</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QComboBox" name="javaVersionComboBox"/>
+            </item>
+            <item>
+             <widget class="QLabel" name="mainClassLabel">
+              <property name="text">
+               <string>主类 (/分隔):</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLineEdit" name="mainClassEdit"/>
+            </item>
+           </layout>
+          </widget>
+          <widget class="QWidget" name="splashSettings">
+           <attribute name="title">
+            <string>🎨 启动页设置</string>
+           </attribute>
+           <layout class="QVBoxLayout" name="splashLayout">
+            <item>
+             <widget class="QWidget" name="splashImageWidget" native="true">
+              <property name="maximumSize">
+               <size>
+                <width>16777215</width>
+                <height>16777215</height>
+               </size>
+              </property>
+              <layout class="QVBoxLayout" name="splashImageVerticalLayout">
+               <property name="leftMargin">
+                <number>0</number>
+               </property>
+               <property name="topMargin">
+                <number>0</number>
+               </property>
+               <property name="rightMargin">
+                <number>0</number>
+               </property>
+               <property name="bottomMargin">
+                <number>0</number>
+               </property>
+               <item>
+                <widget class="QCheckBox" name="enablSplashCheckBox">
+                 <property name="text">
+                  <string>启用启动页</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QWidget" name="splashImageContentWidget" native="true">
+                 <property name="maximumSize">
+                  <size>
+                   <width>16777215</width>
+                   <height>16777215</height>
+                  </size>
+                 </property>
+                 <layout class="QVBoxLayout" name="splashImageContentLayout">
+                  <property name="leftMargin">
+                   <number>9</number>
+                  </property>
+                  <property name="topMargin">
+                   <number>9</number>
+                  </property>
+                  <property name="rightMargin">
+                   <number>9</number>
+                  </property>
+                  <property name="bottomMargin">
+                   <number>9</number>
+                  </property>
+                  <item>
+                   <widget class="QLabel" name="splashImageLabel">
+                    <property name="text">
+                     <string>启动页图片:</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QWidget" name="splashImageInnerWidget" native="true">
+                    <layout class="QHBoxLayout" name="splashImageLayout">
+                     <property name="leftMargin">
+                      <number>0</number>
+                     </property>
+                     <property name="topMargin">
+                      <number>0</number>
+                     </property>
+                     <property name="rightMargin">
+                      <number>0</number>
+                     </property>
+                     <property name="bottomMargin">
+                      <number>0</number>
+                     </property>
+                     <item>
+                      <widget class="QLineEdit" name="splashImageEdit"/>
+                     </item>
+                     <item>
+                      <widget class="QPushButton" name="splashImageBtn">
+                       <property name="maximumSize">
+                        <size>
+                         <width>100</width>
+                         <height>16777215</height>
+                        </size>
+                       </property>
+                       <property name="text">
+                        <string>选择图片</string>
+                       </property>
+                      </widget>
+                     </item>
+                    </layout>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QGraphicsView" name="splashView"/>
+                  </item>
+                  <item>
+                   <widget class="QLabel" name="splashNameLabel">
+                    <property name="text">
+                     <string>程序名:</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QLineEdit" name="splashNameEdit"/>
+                  </item>
+                  <item>
+                   <widget class="QLabel" name="splashVersionLabel">
+                    <property name="text">
+                     <string>程序版本:</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QLineEdit" name="splashVersionEdit"/>
+                  </item>
+                 </layout>
+                </widget>
+               </item>
+              </layout>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+          <widget class="QWidget" name="exeSettings">
+           <attribute name="title">
+            <string>🗂️ exe设置</string>
+           </attribute>
+           <layout class="QVBoxLayout" name="advancedLayout">
+            <item>
+             <widget class="QWidget" name="iconWidget" native="true">
+              <property name="maximumSize">
+               <size>
+                <width>16777215</width>
+                <height>70</height>
+               </size>
+              </property>
+              <layout class="QVBoxLayout" name="iconVerticalLayout">
+               <property name="leftMargin">
+                <number>0</number>
+               </property>
+               <property name="topMargin">
+                <number>0</number>
+               </property>
+               <property name="rightMargin">
+                <number>0</number>
+               </property>
+               <property name="bottomMargin">
+                <number>0</number>
+               </property>
+               <item>
+                <widget class="QLabel" name="iconLabel">
+                 <property name="text">
+                  <string>程序图标:</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QWidget" name="iconInnerWidget" native="true">
+                 <layout class="QHBoxLayout" name="iconLayout">
+                  <property name="leftMargin">
+                   <number>0</number>
+                  </property>
+                  <property name="topMargin">
+                   <number>0</number>
+                  </property>
+                  <property name="rightMargin">
+                   <number>0</number>
+                  </property>
+                  <property name="bottomMargin">
+                   <number>0</number>
+                  </property>
+                  <item>
+                   <widget class="QLineEdit" name="iconPathEdit"/>
+                  </item>
+                  <item>
+                   <widget class="QLabel" name="iconView">
+                    <property name="minimumSize">
+                     <size>
+                      <width>40</width>
+                      <height>0</height>
+                     </size>
+                    </property>
+                    <property name="text">
+                     <string/>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QPushButton" name="iconBtn">
+                    <property name="maximumSize">
+                     <size>
+                      <width>100</width>
+                      <height>16777215</height>
+                     </size>
+                    </property>
+                    <property name="text">
+                     <string>选择图标</string>
+                    </property>
+                   </widget>
+                  </item>
+                 </layout>
+                </widget>
+               </item>
+              </layout>
+             </widget>
+            </item>
+            <item>
+             <widget class="QCheckBox" name="showConsoleCheckBox">
+              <property name="text">
+               <string>启动时显示黑窗口</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QCheckBox" name="requireAdminCheckBox">
+              <property name="text">
+               <string>需要管理员权限</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QGroupBox" name="groupBox">
+              <property name="maximumSize">
+               <size>
+                <width>16777215</width>
+                <height>80</height>
+               </size>
+              </property>
+              <property name="title">
+               <string>修改外部exe:</string>
+              </property>
+              <layout class="QVBoxLayout" name="groupBoxLayout">
+               <item>
+                <widget class="QWidget" name="loadExeInnerWidget" native="true">
+                 <layout class="QHBoxLayout" name="loadExeLayout">
+                  <property name="leftMargin">
+                   <number>0</number>
+                  </property>
+                  <property name="topMargin">
+                   <number>0</number>
+                  </property>
+                  <property name="rightMargin">
+                   <number>0</number>
+                  </property>
+                  <property name="bottomMargin">
+                   <number>0</number>
+                  </property>
+                  <item>
+                   <widget class="QLineEdit" name="externalExePathEdit"/>
+                  </item>
+                  <item>
+                   <widget class="QPushButton" name="loadExeBtn">
+                    <property name="maximumSize">
+                     <size>
+                      <width>100</width>
+                      <height>16777215</height>
+                     </size>
+                    </property>
+                    <property name="text">
+                     <string>加载exe</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QPushButton" name="modifyExeBtn">
+                    <property name="maximumSize">
+                     <size>
+                      <width>100</width>
+                      <height>16777215</height>
+                     </size>
+                    </property>
+                    <property name="text">
+                     <string>修改exe</string>
+                    </property>
+                   </widget>
+                  </item>
+                 </layout>
+                </widget>
+               </item>
+              </layout>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </widget>
+        </item>
+        <item>
+         <layout class="QHBoxLayout" name="buttonLayout">
+          <item>
+           <widget class="QPushButton" name="loadConfigBtn">
+            <property name="text">
+             <string>加载配置文件</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="saveConfigBtn">
+            <property name="text">
+             <string>保存配置</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="packageBtn">
+            <property name="text">
+             <string>打包</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </item>
+       </layout>
+      </widget>
+      <widget class="QWidget" name="bottomWidget">
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
+         <horstretch>0</horstretch>
+         <verstretch>3</verstretch>
+        </sizepolicy>
+       </property>
+       <layout class="QVBoxLayout" name="bottomLayout">
+        <property name="leftMargin">
+         <number>0</number>
+        </property>
+        <property name="topMargin">
+         <number>0</number>
+        </property>
+        <property name="rightMargin">
+         <number>0</number>
+        </property>
+        <property name="bottomMargin">
+         <number>0</number>
+        </property>
+        <item>
+         <widget class="QLabel" name="infoLabel">
+          <property name="text">
+           <string>输出信息:</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QTextEdit" name="infoBox">
+          <property name="readOnly">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QMenuBar" name="menubar">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>700</width>
+     <height>33</height>
+    </rect>
+   </property>
+   <widget class="QMenu" name="menu">
+    <property name="title">
+     <string>工具</string>
+    </property>
+    <addaction name="attachExeAction"/>
+   </widget>
+   <addaction name="menu"/>
+  </widget>
+  <widget class="QStatusBar" name="statusbar"/>
+  <action name="parseExeAction">
+   <property name="text">
+    <string>解析exe</string>
+   </property>
+  </action>
+  <action name="attachExeAction">
+   <property name="text">
+    <string>附加启动exe</string>
+   </property>
+  </action>
+ </widget>
+ <resources/>
+ <connections/>
+ <buttongroups>
+  <buttongroup name="modeButtonGroup"/>
+ </buttongroups>
+</ui>
