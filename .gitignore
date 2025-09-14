@@ -6,3 +6,4 @@
 /CMakeSettings.json
 /*.pdb
 /.vs
+configure_file.cmake

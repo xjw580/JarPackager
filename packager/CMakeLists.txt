@@ -250,17 +250,17 @@ add_custom_command(
 file(WRITE "${CMAKE_BINARY_DIR}/config.xml.in" [=[
 <?xml version="1.0" encoding="UTF-8"?>
 <Installer>
-    <Name>${PROJECT_NAME}</Name>
+    <Name>JarPackager</Name>
     <Version>@PROJECT_VERSION@</Version>
-    <Title>${PROJECT_NAME} 安装程序</Title>
-    <Publisher>${PROJECT_NAME} Team</Publisher>
-    <StartMenuDir>${PROJECT_NAME}</StartMenuDir>
-    <TargetDir>@ApplicationsDir@/${PROJECT_NAME}</TargetDir>
-    <AdminTargetDir>@ApplicationsDir@/${PROJECT_NAME}</AdminTargetDir>
+    <Title>JarPackager 安装程序</Title>
+    <Publisher>JarPackager Team</Publisher>
+    <StartMenuDir>JarPackager</StartMenuDir>
+    <TargetDir>@ApplicationsDir@/JarPackager</TargetDir>
+    <AdminTargetDir>@ApplicationsDir@/JarPackager</AdminTargetDir>
     <WizardStyle>Modern</WizardStyle>
     <TitleColor>#2c3e50</TitleColor>
     <RunProgram>@TargetDir@/@PROJECT_NAME@@EXECUTABLE_SUFFIX@</RunProgram>
-    <RunProgramDescription>启动 ${PROJECT_NAME}</RunProgramDescription>
+    <RunProgramDescription>启动 JarPackager</RunProgramDescription>
     <AllowSpaceInPath>true</AllowSpaceInPath>
     <AllowNonAsciiCharacters>true</AllowNonAsciiCharacters>
     <RemoteRepositories>
@@ -272,7 +272,7 @@ file(WRITE "${CMAKE_BINARY_DIR}/config.xml.in" [=[
 file(WRITE "${CMAKE_BINARY_DIR}/package.xml.in" [=[
 <?xml version="1.0" encoding="UTF-8"?>
 <Package>
-    <DisplayName>${PROJECT_NAME} 应用程序</DisplayName>
+    <DisplayName>JarPackager 应用程序</DisplayName>
     <Description>一个用于将JAR文件打包到EXE文件中的工具。支持配置启动参数、JVM选项，并提供友好的图形界面。</Description>
     <Version>@PROJECT_VERSION@</Version>
     <ReleaseDate>@BUILD_DATE@</ReleaseDate>
@@ -289,7 +289,7 @@ file(WRITE "${CMAKE_BINARY_DIR}/package.xml.in" [=[
 file(WRITE "${CMAKE_BINARY_DIR}/installscript.qs.in" [=[
 function Component()
 {
-    // ${PROJECT_NAME} 安装组件构造函数
+    // JarPackager 安装组件构造函数
 }
 
 Component.prototype.createOperations = function()
@@ -301,23 +301,23 @@ Component.prototype.createOperations = function()
         // Windows特定操作
         component.addOperation("CreateShortcut",
             "@TargetDir@/@PROJECT_NAME@.exe",
-            "@StartMenuDir@/${PROJECT_NAME}.lnk",
+            "@StartMenuDir@/JarPackager.lnk",
             "workingDirectory=@TargetDir@",
             "iconPath=@TargetDir@/@PROJECT_NAME@.exe",
             "description=JAR文件打包工具 - 将JAR文件嵌入到EXE中");
 
         component.addOperation("CreateShortcut",
             "@TargetDir@/@PROJECT_NAME@.exe",
-            "@DesktopDir@/${PROJECT_NAME}.lnk",
+            "@DesktopDir@/JarPackager.lnk",
             "workingDirectory=@TargetDir@",
             "iconPath=@TargetDir@/@PROJECT_NAME@.exe",
-            "description=${PROJECT_NAME} - JAR文件打包工具");
+            "description=JarPackager - JAR文件打包工具");
 
         // 注册文件关联（可选）
         component.addOperation("RegisterFileType",
             "jar",
             "@TargetDir@/@PROJECT_NAME@.exe %1",
-            "${PROJECT_NAME} - JAR File",
+            "JarPackager - JAR File",
             "text/plain",
             "@TargetDir@/@PROJECT_NAME@.exe,0");
     }
@@ -325,8 +325,8 @@ Component.prototype.createOperations = function()
     if (systemInfo.productType === "osx") {
         // macOS特定操作
         component.addOperation("CreateLink",
-            "@TargetDir@/${PROJECT_NAME}.app",
-            "@ApplicationsDir@/${PROJECT_NAME}.app");
+            "@TargetDir@/JarPackager.app",
+            "@ApplicationsDir@/JarPackager.app");
     }
 }
 
@@ -357,7 +357,7 @@ add_custom_command(
         -DEXECUTABLE_SUFFIX=${EXECUTABLE_SUFFIX}
         -DINPUT_FILE="${CMAKE_BINARY_DIR}/config.xml.in"
         -DOUTPUT_FILE="${INSTALLER_CONFIG_DIR}/config.xml"
-        -P "configure_file.cmake"
+        -P "${CMAKE_SOURCE_DIR}/configure_file.cmake"
         DEPENDS "${CMAKE_BINARY_DIR}/config.xml.in"
         COMMENT "配置${PROJECT_NAME}安装程序config.xml"
 )
@@ -370,7 +370,7 @@ add_custom_command(
         -DBUILD_DATE=${BUILD_DATE}
         -DINPUT_FILE="${CMAKE_BINARY_DIR}/package.xml.in"
         -DOUTPUT_FILE="${INSTALLER_PACKAGE_META_DIR}/package.xml"
-        -P "configure_file.cmake"
+        -P "${CMAKE_SOURCE_DIR}/configure_file.cmake"
         DEPENDS "${CMAKE_BINARY_DIR}/package.xml.in"
         COMMENT "配置${PROJECT_NAME}包package.xml"
 )
@@ -381,15 +381,15 @@ add_custom_command(
         -DPROJECT_NAME=${PROJECT_NAME}
         -DINPUT_FILE="${CMAKE_BINARY_DIR}/installscript.qs.in"
         -DOUTPUT_FILE="${INSTALLER_PACKAGE_META_DIR}/installscript.qs"
-        -P "configure_file.cmake"
+        -P "${CMAKE_SOURCE_DIR}/configure_file.cmake"
         DEPENDS "${INSTALLER_PACKAGE_META_DIR}/license.txt"
         COMMENT "配置${PROJECT_NAME}安装脚本"
 )
 
 # 创建configure_file.cmake脚本
-file(WRITE "configure_file.cmake" [=[
+file(WRITE "${CMAKE_SOURCE_DIR}/configure_file.cmake" [=[
 # 简单的文件配置脚本
-file(read ${INPUT_FILE} CONTENT)
+file(READ ${INPUT_FILE} CONTENT)
 string(REPLACE "@PROJECT_NAME@" "${PROJECT_NAME}" CONTENT "${CONTENT}")
 string(REPLACE "@PROJECT_VERSION@" "${PROJECT_VERSION}" CONTENT "${CONTENT}")
 string(REPLACE "@BUILD_DATE@" "${BUILD_DATE}" CONTENT "${CONTENT}")
