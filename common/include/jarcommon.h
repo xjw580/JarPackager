@@ -20,7 +20,7 @@ namespace JarCommon {
      * exe
      * jar
      * image (png格式)
-     * mainClass + jvmArgs + programArgs + md5Hash + javaPath + jarExtractPath + splashProgramName + splashProgramVersion
+     * mainClass + jvmArgs + programArgs + javaPath + jarExtractPath + splashProgramName + splashProgramVersion
      * JarFooter
      */
 #pragma pack(push, 1)
@@ -29,11 +29,14 @@ namespace JarCommon {
         unsigned long long jarOffset;
         unsigned long long jarSize;
         unsigned long long splashImageSize;
+        bool splashShowProgress;
+        bool splashShowProgressText;
+        int launchTime;//单位：ms
+        unsigned long long timestamp;
         unsigned int javaVersion;
         unsigned int mainClassLength;
         unsigned int jvmArgsLength;
         unsigned int programArgsLength;
-        unsigned int md5Length;
         unsigned int javaPathLength;
         unsigned int jarExtractPathLength;
         unsigned int splashProgramNameLength;

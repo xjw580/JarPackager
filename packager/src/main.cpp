@@ -11,8 +11,8 @@ int main(int argc, char *argv[])
     // 设置应用程序信息
     QApplication::setApplicationName("JAR Packager");
     QApplication::setApplicationVersion("1.0.0");
-    QApplication::setOrganizationName("JAR Packager Team");
-    QApplication::setOrganizationDomain("jarpackager.com");
+    QApplication::setOrganizationName("XiaoJiawei");
+    QApplication::setOrganizationDomain("xiaojiawei.club");
 
     // 设置应用程序图标（如果有的话）
     // app.setWindowIcon(QIcon(":/icons/app.ico"));

@@ -11,6 +11,12 @@
 
 import std;
 
+#pragma pack(push, 1)
+struct Footer {
+    uint64_t timestamp;
+};
+#pragma pack(pop)
+
 // UTF-8和宽字符转换辅助函数
 std::string wstringToUtf8(const std::wstring &wstr) {
     return std::wstring_convert<std::codecvt_utf8<wchar_t>>().to_bytes(wstr);
@@ -109,13 +115,12 @@ std::expected<std::wstring, std::wstring> findJvmPath() {
     return std::unexpected{L"未找到JVM动态库"};
 }
 
-std::expected<bool, std::wstring> extractJarInfo(const std::wstring &filePath, uint64_t &jarOffset, uint64_t &jarSize,
-                                                 uint64_t &splashImageSize, uint32_t &javaVersion,
-                                                 std::wstring &mainClass, std::vector<std::wstring> &jvmArgs,
-                                                 std::vector<std::wstring> &programArgs, std::wstring &md5Hash,
-                                                 std::wstring &javaPath, std::wstring &jarExtractPath,
-                                                 std::wstring &splashProgramName, std::wstring &splashProgramVersion,
-                                                 JarCommon::LaunchMode &launchMode) {
+std::expected<bool, std::wstring>
+extractJarInfo(const std::wstring &filePath, uint64_t &jarOffset, uint64_t &jarSize, uint64_t &splashImageSize,
+               bool &splashShowProgress, bool &splashShowProgressText, int &launchTime, uint64_t &timestamp,
+               uint32_t &javaVersion, std::wstring &mainClass, std::vector<std::wstring> &jvmArgs,
+               std::vector<std::wstring> &programArgs, std::wstring &javaPath, std::wstring &jarExtractPath,
+               std::wstring &splashProgramName, std::wstring &splashProgramVersion, JarCommon::LaunchMode &launchMode) {
 
     std::ifstream file(filePath, std::ios::binary);
     if (!file.is_open()) {
@@ -130,7 +135,7 @@ std::expected<bool, std::wstring> extractJarInfo(const std::wstring &filePath, u
     }
 
     file.seekg(fileSize - sizeof(JarCommon::JarFooter));
-    JarCommon::JarFooter footer{};
+    JarCommon::JarFooter footer;
     file.read(reinterpret_cast<char *>(&footer), sizeof(footer));
 
     if (!file.good() || footer.magic != JarCommon::JAR_MAGIC) {
@@ -138,8 +143,8 @@ std::expected<bool, std::wstring> extractJarInfo(const std::wstring &filePath, u
     }
 
     const int64_t stringsOffset = fileSize - sizeof(JarCommon::JarFooter) - footer.mainClassLength -
-                                  footer.jvmArgsLength - footer.programArgsLength - footer.md5Length -
-                                  footer.javaPathLength - footer.jarExtractPathLength - footer.splashProgramNameLength -
+                                  footer.jvmArgsLength - footer.programArgsLength - footer.javaPathLength -
+                                  footer.jarExtractPathLength - footer.splashProgramNameLength -
                                   footer.splashProgramVersionLength;
     file.seekg(stringsOffset);
 
@@ -168,7 +173,6 @@ std::expected<bool, std::wstring> extractJarInfo(const std::wstring &filePath, u
         programArgs.clear();
     }
 
-    md5Hash = readUtf8String(footer.md5Length);
     javaPath = readUtf8String(footer.javaPathLength);
     jarExtractPath = readUtf8String(footer.jarExtractPathLength);
     splashProgramName = readUtf8String(footer.splashProgramNameLength);
@@ -177,22 +181,52 @@ std::expected<bool, std::wstring> extractJarInfo(const std::wstring &filePath, u
     jarOffset = footer.jarOffset;
     jarSize = footer.jarSize;
     splashImageSize = footer.splashImageSize;
+    splashShowProgress = footer.splashShowProgress;
+    splashShowProgressText = footer.splashShowProgressText;
+    launchTime = footer.launchTime;
     javaVersion = footer.javaVersion;
     launchMode = footer.launchMode;
+    timestamp = footer.timestamp;
 
     return true;
 }
 
-std::expected<bool, std::wstring> extractJarFile(const std::wstring &executablePath, uint64_t jarOffset,
-                                                 uint64_t jarSize, const std::wstring &outputPath) {
-    std::ifstream inFile(executablePath, std::ios::binary);
-    if (!inFile.is_open()) {
-        return std::unexpected{L"无法打开可执行文件: " + executablePath};
+std::wstring expandEnvironmentVariablesWindows(const std::wstring &path) {
+    std::wstring result = path;
+    const std::wregex envPattern(LR"(\$ENV\{([^}]+)\})");
+    std::wsmatch match;
+
+    while (std::regex_search(result, match, envPattern)) {
+        std::wstring envName = match[1].str();
+
+        // 使用Windows API获取环境变量
+        wchar_t buffer[32767]; // Windows环境变量最大长度
+        const DWORD length = GetEnvironmentVariableW(envName.c_str(), buffer, sizeof(buffer) / sizeof(wchar_t));
+
+        std::wstring replacement;
+        if (length > 0 && length < sizeof(buffer) / sizeof(wchar_t)) {
+            replacement = std::wstring(buffer);
+        } else {
+            replacement = L""; // 环境变量不存在或过长
+        }
+
+        result.replace(match.position(), match.length(), replacement);
     }
 
-    std::ofstream outFile(outputPath, std::ios::binary);
+    return result;
+}
+
+std::expected<bool, std::wstring> extractJarFile(const std::wstring &executablePath, const std::wstring &jarPath,
+                                                 const uint64_t jarOffset, const uint64_t jarSize,
+                                                 const Footer &footer) {
+    std::ifstream inFile(executablePath, std::ios::binary);
+    if (!inFile.is_open()) {
+        return std::unexpected{L"无法读取可执行文件: " + executablePath};
+    }
+    SetFileAttributesW(jarPath.c_str(), FILE_ATTRIBUTE_NORMAL);
+    std::ofstream outFile(jarPath, std::ios::binary);
     if (!outFile.is_open()) {
-        return std::unexpected{L"无法创建输出文件: " + outputPath};
+        return std::unexpected{L"无法创建输出文件: " + jarPath};
     }
 
     inFile.seekg(jarOffset);
@@ -216,6 +250,10 @@ std::expected<bool, std::wstring> extractJarFile(const std::wstring &executableP
         remainingBytes -= bytesToRead;
     }
 
+    outFile.write(reinterpret_cast<const char *>(&footer), sizeof(Footer));
+    inFile.close();
+    outFile.close();
+    SetFileAttributesW(jarPath.c_str(), FILE_ATTRIBUTE_HIDDEN);
     return true;
 }
 
@@ -279,6 +317,27 @@ std::expected<bool, std::wstring> verifyJarFile(const std::wstring &jarPath, con
     }
 
     return actualMD5Result.value() == expectedMD5;
+}
+
+std::expected<bool, std::wstring> verifyJarFile(const std::wstring &jarPath, const uint64_t timestamp) {
+    std::ifstream inFile(jarPath, std::ios::binary);
+    if (!inFile) {
+        return std::unexpected{L"读取jar文件失败, " + jarPath};
+    }
+    inFile.seekg(0, std::ios::end);
+    const int64_t fileSize = inFile.tellg();
+    constexpr auto footerSize = sizeof(Footer);
+    if (fileSize < footerSize) {
+        return std::unexpected{L"时间戳校验失败"};
+    }
+    Footer footer;
+    inFile.seekg(fileSize - footerSize);
+    inFile.read(reinterpret_cast<char *>(&footer), footerSize);
+    if (footer.timestamp == timestamp) {
+        return true;
+    }
+    inFile.close();
+    return std::unexpected{L"时间戳校验失败"};
 }
 
 // 使用java.exe启动JAR
@@ -436,8 +495,10 @@ std::wstring parseJavaVersion(const uint32_t javaVersion) {
 }
 
 void showJarInfo(const std::wstring &mainClass, const uint32_t javaVersion, const uint64_t splashImageSize,
-                 const std::vector<std::wstring> &jvmArgs, const std::vector<std::wstring> &programArgs,
-                 const std::wstring &md5Hash, const std::wstring &javaPath, const std::wstring &jarExtractPath,
+                 const bool splashShowProgress, const bool splashShowProgressText, const int launchTime,
+                 const uint64_t timestamp, const std::vector<std::wstring> &jvmArgs,
+                 const std::vector<std::wstring> &programArgs,
+                 const std::wstring &javaPath, const std::wstring &jarExtractPath,
                  const std::wstring &splashProgramName, const std::wstring &splashProgramVersion,
                  const JarCommon::LaunchMode launchMode, uint64_t jarOffset, uint64_t jarSize) {
     std::wstringstream info;
@@ -447,15 +508,18 @@ void showJarInfo(const std::wstring &mainClass, const uint32_t javaVersion, cons
 
     const auto javaVer = parseJavaVersion(javaVersion);
     info << L"Java 版本: " << (javaVer.empty() ? L"未指定" : javaVer) << L"\n";
-    info << L"MD5 哈希: " << (md5Hash.empty() ? L"未提供" : md5Hash) << L"\n";
+    info << L"时间戳: " << timestamp << L"\n";
     info << L"启动模式: " << (launchMode == JarCommon::LaunchMode::DirectJVM ? L"direct_jvm" : JarCommon::JAVA_EXE_NAME)
          << L"\n";
     info << L"主类: " << (mainClass.empty() ? L"未指定" : mainClass) << L"\n";
     info << L"Java 路径: " << (javaPath.empty() ? L"未指定" : javaPath) << L"\n";
-    info << L"Jar解压路径: " << (jarExtractPath.empty() ? L"未指定" : jarExtractPath) << L"\n";
+    info << L"Jar解压路径: " << jarExtractPath << L"\n";
     info << L"启动页图片 大小: " << splashImageSize << L" 字节\n";
     info << L"启动页名: " << (splashProgramName.empty() ? L"未指定" : splashProgramName) << L"\n";
     info << L"启动页版本: " << (splashProgramVersion.empty() ? L"未指定" : splashProgramVersion) << L"\n";
+    info << L"启动页显示进度条: " << std::boolalpha << splashShowProgress << L"\n";
+    info << L"启动页显示进度条文本: " << std::boolalpha << splashShowProgressText << L"\n";
+    info << L"启动预估时间(毫秒): " << (launchTime <= 0 ? L"" : std::to_wstring(launchTime)) << L"\n";
 
     if (!jvmArgs.empty()) {
         info << L"\nJVM 参数:\n";
@@ -500,20 +564,20 @@ std::vector<char> loadImageFromExe(const std::wstring &exePath, const uint64_t i
     return imageData;
 }
 
-void updateSplashProgress(SplashScreen *splash) {
-    splash->StartAutoProgress(0.2, 5); // 每50ms增加0.5%，约10秒完成
-    splash->SetAutoCloseDelay(10000);    // 5秒后自动关闭
-
+void updateSplashProgress(SplashScreen *splash, int launchTime) {
+    constexpr DWORD interval = 20;
+    if (launchTime <= 0) {
+        launchTime = 10000;
+    }
+    double step = 100.0 / launchTime * interval;
+    splash->StartAutoProgress(step, interval);
+    splash->SetAutoCloseDelay(launchTime * 1.5);
 
     MSG msg;
-    while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
-        if (msg.message == WM_QUIT) {
-            return;
-        }
+    while (GetMessage(&msg, nullptr, 0, 0)) {
         TranslateMessage(&msg);
         DispatchMessage(&msg);
     }
-    MessageBoxA(nullptr, "ext","", MB_OK);
 }
 
 int wmain(int argc, wchar_t *argv[]) {
@@ -539,13 +603,17 @@ int wmain(int argc, wchar_t *argv[]) {
         // 提取JAR信息
         uint64_t jarOffset, jarSize, imageSize;
         uint32_t javaVersion;
-        std::wstring mainClass, md5Hash, javaPath, jarExtractPath, splashProgramName, splashProgramVersion;
+        std::wstring mainClass, javaPath, jarExtractPath, splashProgramName, splashProgramVersion;
         std::vector<std::wstring> jvmArgs, programArgs;
         JarCommon::LaunchMode launchMode;
+        bool splashShowProgress, splashShowProgressText;
+        int launchTime;
+        uint64_t timestamp;
 
-        auto result = extractJarInfo(executablePath, jarOffset, jarSize, imageSize, javaVersion, mainClass, jvmArgs,
-                                     programArgs, md5Hash, javaPath, jarExtractPath, splashProgramName,
-                                     splashProgramVersion, launchMode);
+        auto result = extractJarInfo(executablePath, jarOffset, jarSize, imageSize, splashShowProgress,
+                                     splashShowProgressText, launchTime, timestamp, javaVersion, mainClass, jvmArgs,
+                                     programArgs, javaPath, jarExtractPath, splashProgramName, splashProgramVersion,
+                                     launchMode);
 
         if (!result) {
             showError(result.error());
@@ -554,8 +622,9 @@ int wmain(int argc, wchar_t *argv[]) {
 
         // 如果是info命令，显示信息后退出
         if (showInfo) {
-            showJarInfo(mainClass, javaVersion, imageSize, jvmArgs, programArgs, md5Hash, javaPath, jarExtractPath,
-                        splashProgramName, splashProgramVersion, launchMode, jarOffset, jarSize);
+            showJarInfo(mainClass, javaVersion, imageSize, splashShowProgress, splashShowProgressText, launchTime,
+                        timestamp, jvmArgs, programArgs, javaPath, jarExtractPath, splashProgramName,
+                        splashProgramVersion, launchMode, jarOffset, jarSize);
             return 0;
         }
 
@@ -563,17 +632,20 @@ int wmain(int argc, wchar_t *argv[]) {
         std::thread t([&] {
             // 检查并提取JAR文件
             auto fileStem = std::filesystem::path(executablePath.c_str()).stem().wstring();
-            std::wstring jarFileName = fileStem + L".jar";
             bool needExtract = true;
+            const std::wstring expandJarExtractPath =
+                    std::filesystem::path(expandEnvironmentVariablesWindows(jarExtractPath)) / (fileStem + L".jar");
 
-            if (std::filesystem::exists(jarFileName)) {
-                if (auto verifyResult = verifyJarFile(jarFileName, md5Hash); verifyResult && verifyResult.value()) {
+            if (std::filesystem::exists(expandJarExtractPath)) {
+                if (auto verifyResult = verifyJarFile(expandJarExtractPath, timestamp); verifyResult) {
                     needExtract = false;
                 }
             }
 
             if (needExtract) {
-                if (auto extractResult = extractJarFile(executablePath, jarOffset, jarSize, jarFileName);
+                const Footer footer{timestamp};
+                if (auto extractResult =
+                            extractJarFile(executablePath, expandJarExtractPath, jarOffset, jarSize, footer);
                     !extractResult) {
                     showError(extractResult.error());
                     return 1;
@@ -612,14 +684,14 @@ int wmain(int argc, wchar_t *argv[]) {
                         }
                     }
 
-                    if (auto launchResult = launchWithJavaExe(javaExePath, jarFileName, jvmArgs, programArgs);
+                    if (auto launchResult = launchWithJavaExe(javaExePath, expandJarExtractPath, jvmArgs, programArgs);
                         !launchResult) {
                         showError(launchResult.error());
                         return 1;
                     }
                 } else {
-                    if (auto launchResult =
-                                launchWithJvmDll(jvmDllPath, jarFileName, javaVersion, mainClass, jvmArgs, programArgs);
+                    if (auto launchResult = launchWithJvmDll(jvmDllPath, expandJarExtractPath, javaVersion, mainClass,
+                                                             jvmArgs, programArgs);
                         !launchResult) {
                         showError(L"JVM 模式启动失败: " + launchResult.error());
                         return 1;
@@ -635,7 +707,7 @@ int wmain(int argc, wchar_t *argv[]) {
                     }
                 }
 
-                if (auto launchResult = launchWithJavaExe(javaExePath, jarFileName, jvmArgs, programArgs);
+                if (auto launchResult = launchWithJavaExe(javaExePath, expandJarExtractPath, jvmArgs, programArgs);
                     !launchResult) {
                     showError(launchResult.error());
                     return 1;
@@ -644,11 +716,16 @@ int wmain(int argc, wchar_t *argv[]) {
             return 0;
         });
 
-        const auto imageData = loadImageFromExe(executablePath, jarOffset + jarSize, imageSize);
-        const auto splash = new SplashScreen(imageData, splashProgramName, splashProgramVersion);
-        splash->Show();
-        updateSplashProgress(splash);
-        splash->Close();
+        if (imageSize > 0) {
+            if (const auto imageData = loadImageFromExe(executablePath, jarOffset + jarSize, imageSize);
+                !imageData.empty()) {
+                const auto splash = new SplashScreen(imageData, splashProgramName, splashProgramVersion,
+                                                     splashShowProgress, splashShowProgressText);
+                splash->Show();
+                updateSplashProgress(splash, launchTime);
+                splash->Close();
+            }
+        }
         t.join();
         return 0;
 

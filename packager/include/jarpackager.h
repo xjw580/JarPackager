@@ -32,6 +32,9 @@ public:
     QString mainClass{};
     bool enableSplash = false;
     QString splashImagePath{};
+    bool splashShowProgress = false;
+    bool splashShowProgressText = false;
+    int launchTime = 0; // 单位：ms
     QString splashProgramName{};
     QString splashProgramVersion{};
     QString iconPath{};
@@ -43,16 +46,6 @@ public:
     void fromJson(const QJsonObject &obj);
 };
 
-inline constexpr unsigned int EXE_MAGIC = 0x65786546; // "EXEF"
-
-#pragma pack(push, 1)
-struct ExeFooter {
-    unsigned int magic;
-    unsigned long long exeOffset;
-    unsigned long long exeSize;
-};
-#pragma pack(pop)
-
 class Packager {
 
     Packager() = delete;
@@ -63,6 +56,9 @@ public:
         QByteArray exeData;
         QString jarPath;
         QString splashImagePath;
+        bool splashShowProgress;
+        bool splashShowProgressText;
+        int launchTime; // 单位：ms
         unsigned int javaVersion;
         QString outputPath;
         QString mainClass;
@@ -78,15 +74,18 @@ public:
         bool requireAdmin;
 
         Config(const QByteArray &exeData_, const QString &jarPath_, const QString &splashImagePath_,
+               const bool splashShowProgress_, const bool splashShowProgressText_, int launchTime_,
                unsigned int javaVersion_, const QString &outputPath_, const QString &mainClass_,
                const QStringList &jvmArgs_, const QStringList &programArgs_, const QString &javaPath_,
                const QString &jarExtractPath_, const QString &splashProgramName_, const QString &splashProgramVersion_,
                const JarCommon::LaunchMode launchMode_, const QString &iconPath_, const bool showConsole_,
                const bool requireAdmin_) :
-            exeData(exeData_), jarPath(jarPath_), splashImagePath(splashImagePath_), javaVersion(javaVersion_),
-            outputPath(outputPath_), mainClass(mainClass_), jvmArgs(jvmArgs_), programArgs(programArgs_),
-            javaPath(javaPath_), jarExtractPath(jarExtractPath_), splashProgramName(splashProgramName_),
-            splashProgramVersion(splashProgramVersion_), launchMode(launchMode_),iconPath(iconPath_), showConsole(showConsole_),requireAdmin(requireAdmin_) {}
+            exeData(exeData_), jarPath(jarPath_), splashImagePath(splashImagePath_),
+            splashShowProgress(splashShowProgress_), splashShowProgressText(splashShowProgressText_),
+            launchTime(launchTime_), javaVersion(javaVersion_), outputPath(outputPath_), mainClass(mainClass_),
+            jvmArgs(jvmArgs_), programArgs(programArgs_), javaPath(javaPath_), jarExtractPath(jarExtractPath_),
+            splashProgramName(splashProgramName_), splashProgramVersion(splashProgramVersion_), launchMode(launchMode_),
+            iconPath(iconPath_), showConsole(showConsole_), requireAdmin(requireAdmin_) {}
     };
 
     static std::expected<bool, QString> packageJar(const Config &config);
@@ -95,16 +94,6 @@ public:
 
     static std::expected<bool, QString> modifyExe(const QString &exePath, const QString &iconPath, bool showConsole,
                                                   bool requireAdmin);
-};
-
-class Attach {
-    Attach() = delete;
-    ~Attach() = delete;
-
-public:
-    static std::expected<QByteArray, QString> readAttachedExe(const QString &attachedExePath);
-
-    static std::expected<QString, QString> attachExeToCurrent(const QString &attachExePath);
 };
 
 class JarPackagerWindow final : public QMainWindow {
@@ -117,6 +106,7 @@ public:
     // 静态方法用于Qt消息处理
     static void messageHandler(QtMsgType type, const QMessageLogContext &context, const QString &msg);
     static JarPackagerWindow *instance; // 静态实例指针
+    static void openDirAndSelect(const QString &filePath);
 
 private slots:
     void on_enablSplashCheckBox_stateChanged(int state);

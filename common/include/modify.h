@@ -29,7 +29,7 @@ public:
 
     std::expected<bool, std::wstring> setSubsystem(WORD subsystem);
 
-    std::expected<bool, std::wstring> setExecutionLevel(ExecutionLevel level) const;
+    [[nodiscard]] std::expected<bool, std::wstring> setExecutionLevel(ExecutionLevel level) const;
 
     std::expected<ExecutionLevel, std::wstring> getExecutionLevel() const;
 

@@ -21,8 +21,6 @@ Description:
 #include <expected>
 #include <windows.h>
 
-#pragma comment(lib, "imagehlp.lib")
-
 // 文件映射RAII包装类
 class FileMappingGuard {
 private:

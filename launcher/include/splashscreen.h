@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <string>
 #include <vector>
@@ -13,6 +13,8 @@ private:
     int m_height;
     std::wstring m_programName;
     std::wstring m_programVersion;
+    bool m_showProgress;
+    bool m_showProgressText;
     std::wstring m_statusText;
 
     // 进度条相关
@@ -35,17 +37,21 @@ private:
     Gdiplus::RectF m_progressRect;
 
     // GDI+相关
-    Gdiplus::Bitmap* m_gdiplusBitmap;
-    Gdiplus::Bitmap* m_cachedBitmap;
+    Gdiplus::Bitmap *m_gdiplusBitmap;
+    Gdiplus::Bitmap *m_cachedBitmap;
 
     // 窗口过程
     static LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+
+    static float CalculateOptimalFontSize(const Gdiplus::Graphics *graphics, const Gdiplus::FontFamily *fontFamily,
+                                          const std::wstring &text, const Gdiplus::RectF &targetRect, float maxFontSize,
+                                          Gdiplus::FontStyle fontStyle);
 
     // DPI相关
     float GetDPIScale();
 
     // 从PNG数据创建位图
-    void CreateBitmapFromPNG(const std::vector<char>& pngData);
+    void CreateBitmapFromPNG(const std::vector<char> &pngData);
 
     // 创建默认背景
     void CreateDefaultBackground();
@@ -62,10 +68,10 @@ private:
     // 计算布局
     void CalculateLayout();
 
+
 public:
-    SplashScreen(const std::vector<char>& pngData,
-                const std::wstring& programName,
-                const std::wstring& programVersion);
+    SplashScreen(const std::vector<char> &pngData, const std::wstring &programName, const std::wstring &programVersion,
+                 bool showProgress = true, bool showProgressText = true);
     ~SplashScreen();
 
     // 显示启动遮罩
@@ -90,14 +96,14 @@ public:
     void SetProgress(double progress);
 
     // 更新状态文本
-    void SetStatusText(const std::wstring& statusText);
+    void SetStatusText(const std::wstring &statusText);
 
     // 同时更新进度和状态文本
-    void UpdateProgress(int progress, const std::wstring* statusText = nullptr);
+    void UpdateProgress(int progress, const std::wstring *statusText = nullptr);
 
     // 获取窗口句柄
-    HWND GetHandle() const { return m_hwnd; }
+    [[nodiscard]] HWND GetHandle() const { return m_hwnd; }
 
     // 获取当前进度
-    double GetProgress() const { return m_progress; }
+    [[nodiscard]] double GetProgress() const { return m_progress; }
 };

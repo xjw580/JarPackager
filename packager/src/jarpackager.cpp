@@ -28,6 +28,7 @@ Description:
 #include <QtCore/QUrl>
 #include <QtGui/QCloseEvent>
 #include <QtGui/QDesktopServices>
+#include <attach.h>
 #include <modify.h>
 
 #include "jarcommon.h"
@@ -53,6 +54,9 @@ QJsonObject SoftConfig::toJson() const {
     obj["mainClass"] = mainClass;
     obj["enableSplash"] = enableSplash;
     obj["splashImagePath"] = splashImagePath;
+    obj["splashShowProgress"] = splashShowProgress;
+    obj["splashShowProgressText"] = splashShowProgressText;
+    obj["launchTime"] = QString::number(launchTime);
     obj["splashProgramName"] = splashProgramName;
     obj["splashProgramVersion"] = splashProgramVersion;
     obj["iconPath"] = iconPath;
@@ -82,6 +86,9 @@ void SoftConfig::fromJson(const QJsonObject &obj) {
     mainClass = obj.value("mainClass").toString();
     enableSplash = obj.value("enableSplash").toBool(false);
     splashImagePath = obj.value("splashImagePath").toString();
+    splashShowProgress = obj.value("splashShowProgress").toBool();
+    splashShowProgressText = obj.value("splashShowProgressText").toBool();
+    launchTime = obj.value("launchTime").toString().toInt();
     splashProgramName = obj.value("splashProgramName").toString();
     splashProgramVersion = obj.value("splashProgramVersion").toString();
     iconPath = obj.value("iconPath").toString();
@@ -101,16 +108,10 @@ std::expected<bool, QString> Packager::packageJar(const Config &config) {
     const QByteArray jarData = jarFile.readAll();
     jarFile.close();
 
-    // 计算MD5
-    QCryptographicHash hash(QCryptographicHash::Md5);
-    hash.addData(jarData);
-    const QString md5Hash = hash.result().toHex();
-
     // 准备字符串数据
     const QByteArray mainClassBytes = config.mainClass.toUtf8();
     const QByteArray jvmArgsBytes = config.jvmArgs.join('\n').toUtf8();
     const QByteArray programArgsBytes = config.programArgs.join('\n').toUtf8();
-    const QByteArray md5HashBytes = md5Hash.toUtf8();
     const QByteArray javaPathBytes = config.javaPath.toUtf8();
     const QByteArray jarExtractPathBytes = config.jarExtractPath.toUtf8();
     const QByteArray splashProgramNameBytes = config.splashProgramName.toUtf8();
@@ -158,11 +159,14 @@ std::expected<bool, QString> Packager::packageJar(const Config &config) {
     outFile.write(mainClassBytes);
     outFile.write(jvmArgsBytes);
     outFile.write(programArgsBytes);
-    outFile.write(md5HashBytes);
     outFile.write(javaPathBytes);
     outFile.write(jarExtractPathBytes);
     outFile.write(splashProgramNameBytes);
     outFile.write(splashProgramVersionBytes);
+
+    const auto now = std::chrono::system_clock::now();
+    const auto duration = now.time_since_epoch();
+    const auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
 
     // 创建Footer结构
     const JarCommon::JarFooter footer{
@@ -170,11 +174,14 @@ std::expected<bool, QString> Packager::packageJar(const Config &config) {
             static_cast<unsigned long long>(exeSize),
             static_cast<unsigned long long>(jarData.size()),
             static_cast<unsigned long long>(pngData.size()),
+            config.splashShowProgress,
+            config.splashShowProgressText,
+            config.launchTime,
+            static_cast<unsigned long long>(timestamp),
             config.javaVersion,
             static_cast<unsigned int>(mainClassBytes.size()),
             static_cast<unsigned int>(jvmArgsBytes.size()),
             static_cast<unsigned int>(programArgsBytes.size()),
-            static_cast<unsigned int>(md5HashBytes.size()),
             static_cast<unsigned int>(javaPathBytes.size()),
             static_cast<unsigned int>(jarExtractPathBytes.size()),
             static_cast<unsigned int>(splashProgramNameBytes.size()),
@@ -214,7 +221,7 @@ std::expected<bool, QString> Packager::extractJarInfo(const QString &jarPath, So
 
     // 计算字符串数据的位置
     const qint64 stringsOffset = fileSize - sizeof(JarCommon::JarFooter) - footer.mainClassLength -
-                                 footer.jvmArgsLength - footer.programArgsLength - footer.md5Length -
+                                 footer.jvmArgsLength - footer.programArgsLength -
                                  footer.javaPathLength - footer.jarExtractPathLength;
 
     file.seek(stringsOffset);
@@ -223,7 +230,6 @@ std::expected<bool, QString> Packager::extractJarInfo(const QString &jarPath, So
     const QByteArray mainClassData = file.read(footer.mainClassLength);
     const QByteArray jvmArgsData = file.read(footer.jvmArgsLength);
     const QByteArray programArgsData = file.read(footer.programArgsLength);
-    const QByteArray md5Data = file.read(footer.md5Length);
     const QByteArray javaPathData = file.read(footer.javaPathLength);
     const QByteArray jarExtractPathData = file.read(footer.jarExtractPathLength);
 
@@ -290,101 +296,6 @@ std::expected<bool, QString> Packager::modifyExe(const QString &exePath, const Q
     return true;
 }
 
-std::expected<QByteArray, QString> Attach::readAttachedExe(const QString &attachedExePath) {
-    QFile file(attachedExePath);
-    if (!file.open(QIODevice::ReadOnly)) {
-        return std::unexpected("无法打开文件: " + attachedExePath);
-    }
-
-    if (file.size() < static_cast<qint64>(sizeof(ExeFooter))) {
-        return std::unexpected("文件太小，没有 ExeFooter");
-    }
-
-    // 读取文件尾部 ExeFooter
-    if (!file.seek(file.size() - sizeof(ExeFooter))) {
-        return std::unexpected("跳转到文件尾部失败");
-    }
-
-    ExeFooter footer;
-    if (file.read(reinterpret_cast<char *>(&footer), sizeof(footer)) != sizeof(footer)) {
-        return std::unexpected("读取 ExeFooter 失败");
-    }
-
-    // 校验 magic
-    if (footer.magic != EXE_MAGIC) {
-        return std::unexpected("ExeFooter magic 不匹配");
-    }
-
-
-    // 读取附加 EXE 内容
-    if (!file.seek(footer.exeOffset)) {
-        return std::unexpected("跳转到附加 EXE 偏移失败");
-    }
-
-    QByteArray exeData = file.read(footer.exeSize);
-    if (exeData.size() != footer.exeSize) {
-        return std::unexpected("读取附加 EXE 内容失败");
-    }
-
-    return exeData;
-}
-
-std::expected<QString, QString> Attach::attachExeToCurrent(const QString &attachExePath) {
-    if (attachExePath.isEmpty())
-        return std::unexpected("附加 EXE 路径为空");
-
-    const QString exeFilePath = QCoreApplication::applicationFilePath();
-    const QString exeDir = QCoreApplication::applicationDirPath();
-    const auto exeInfo = QFileInfo(exeFilePath);
-    const QString newName = exeInfo.baseName() + "_attached." + exeInfo.completeSuffix();
-    const QString newExeFilePath = QDir(exeDir).filePath(newName);
-
-    // 读取当前程序内容
-    QFile srcExe(exeFilePath);
-    if (!srcExe.open(QIODevice::ReadOnly))
-        return std::unexpected("无法读取当前程序文件");
-    QByteArray srcData = srcExe.readAll();
-    srcExe.close();
-
-    // 检查原程序是否已经附加
-    if (const qint64 srcSize = srcData.size(); srcSize >= static_cast<qint64>(sizeof(ExeFooter))) {
-        if (const auto footerPtr =
-                    reinterpret_cast<const ExeFooter *>(srcData.constData() + srcSize - sizeof(ExeFooter));
-            footerPtr->magic == EXE_MAGIC) {
-            srcData.resize(static_cast<int>(footerPtr->exeOffset));
-        }
-    }
-
-    // 读取新的附加 EXE
-    QFile attachExe(attachExePath);
-    if (!attachExe.open(QIODevice::ReadOnly))
-        return std::unexpected("无法读取附加 EXE 文件");
-    QByteArray attachData = attachExe.readAll();
-    attachExe.close();
-
-    // 写入新文件
-    QFile outFile(newExeFilePath);
-    if (!outFile.open(QIODevice::WriteOnly))
-        return std::unexpected("无法创建输出文件");
-
-    if (outFile.write(srcData) != srcData.size())
-        return std::unexpected("写入当前程序失败");
-
-    qint64 exeOffset = outFile.pos();
-    if (outFile.write(attachData) != attachData.size())
-        return std::unexpected("写入附加 EXE 失败");
-
-    ExeFooter footer{EXE_MAGIC, static_cast<unsigned long long>(exeOffset),
-                     static_cast<unsigned long long>(attachData.size())};
-
-    if (outFile.write(reinterpret_cast<const char *>(&footer), sizeof(footer)) != sizeof(footer))
-        return std::unexpected("写入 ExeFooter 失败");
-
-    outFile.close();
-
-    return newExeFilePath;
-}
-
 // JarPackagerWindow 实现
 JarPackagerWindow::JarPackagerWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::JarPackagerWindow) {
     ui->setupUi(this);
@@ -421,10 +332,10 @@ JarPackagerWindow::JarPackagerWindow(QWidget *parent) : QMainWindow(parent), ui(
     ui->javaVersionComboBox->addItems(keys);
     ui->javaVersionComboBox->setCurrentText(keys.last());
 
+    // 初始化启动页配置
     on_enablSplashCheckBox_stateChanged(ui->enablSplashCheckBox->isChecked() ? Qt::Checked : Qt::Unchecked);
-
-    QGraphicsScene *scene = new QGraphicsScene(this);
-    ui->splashView->setScene(scene);
+    ui->launchTimeEdit->setValidator(new QIntValidator(0, 999999, ui->launchTimeEdit));
+    ui->splashView->setScene(new QGraphicsScene(this));
 
     // 连接文本改变信号，用于标记配置已改变
     // 基本设置
@@ -443,10 +354,17 @@ JarPackagerWindow::JarPackagerWindow(QWidget *parent) : QMainWindow(parent), ui(
     connect(ui->splashImageEdit, &QLineEdit::textChanged, [this]() { configChanged = true; });
     connect(ui->splashNameEdit, &QLineEdit::textChanged, [this]() { configChanged = true; });
     connect(ui->splashVersionEdit, &QLineEdit::textChanged, [this]() { configChanged = true; });
+    connect(ui->splashShowProgressCheckBox, &QCheckBox::checkStateChanged, [this]() { configChanged = true; });
+    connect(ui->splashShowProgresstTextCheckBox, &QCheckBox::checkStateChanged, [this]() { configChanged = true; });
+    connect(ui->launchTimeEdit, &QLineEdit::textChanged, [this]() { configChanged = true; });
     // exe设置
     connect(ui->iconPathEdit, &QLineEdit::textChanged, [this]() { configChanged = true; });
     connect(ui->showConsoleCheckBox, &QCheckBox::checkStateChanged, [this]() { configChanged = true; });
     connect(ui->requireAdminCheckBox, &QCheckBox::checkStateChanged, [this]() { configChanged = true; });
+
+    if (const auto &args = QCoreApplication::arguments(); args.size() > 1) {
+        ui->jarEdit->setText(args.at(1));
+    }
 }
 
 JarPackagerWindow::~JarPackagerWindow() {
@@ -535,6 +453,19 @@ void JarPackagerWindow::appendLogMessage(const QString &message) {
     loggingEnabled = true;
 }
 
+void JarPackagerWindow::openDirAndSelect(const QString &filePath) {
+    const QString outputDir = QFileInfo(filePath).absolutePath();
+#ifdef _WIN32
+    const QString explorer = "explorer.exe";
+    QStringList args;
+    args << "/select," << QDir::toNativeSeparators(filePath);
+    QProcess::startDetached(explorer, args);
+#else
+    QDesktopServices::openUrl(QUrl::fromLocalFile(outputDir));
+#endif
+    qInfo() << QString("打开输出目录: %1").arg(outputDir);
+}
+
 void JarPackagerWindow::on_enablSplashCheckBox_stateChanged(const int state) {
     const auto disable = state != Qt::Checked;
     for (auto *child: ui->splashImageContentWidget->findChildren<QWidget *>()) {
@@ -598,6 +529,9 @@ void JarPackagerWindow::on_packageBtn_clicked() {
     const QString jarPath = ui->jarEdit->text().trimmed();
     const bool enableSplash = ui->enablSplashCheckBox->isChecked();
     const QString splashImagePath = enableSplash ? ui->splashImageEdit->text().trimmed() : QString();
+    const bool splashShowProgress = ui->splashShowProgressCheckBox->isChecked();
+    const bool splashShowProgressText = ui->splashShowProgresstTextCheckBox->isChecked();
+    const int launchTime = ui->launchTimeEdit->text().trimmed().toInt();
     const QString splashProgramName = enableSplash ? ui->splashNameEdit->text().trimmed() : QString();
     const QString splashProgramVersion = enableSplash ? ui->splashVersionEdit->text().trimmed() : QString();
     const QString outputPath = ui->outEdit->text().trimmed();
@@ -676,22 +610,26 @@ void JarPackagerWindow::on_packageBtn_clicked() {
     updateStatus("正在打包...");
     const auto &ver = javaVersion.toStdString();
     const unsigned int version = JarCommon::JAVA_VERSION_MAP.contains(ver) ? JarCommon::JAVA_VERSION_MAP.at(ver) : 0;
-    const auto readAttachRes = Attach::readAttachedExe(QCoreApplication::applicationFilePath());
+    const auto readAttachRes = Attach::readAttachedExe(QCoreApplication::applicationFilePath().toStdWString());
     if (!readAttachRes) {
-        qWarning() << "获取当前程序的附加exe失败, " << readAttachRes.error();
-        QMessageBox::critical(this, "获取附加exe失败", readAttachRes.error());
+        const auto error = QString::fromStdWString(readAttachRes.error());
+        qWarning() << "获取当前程序的附加exe失败, " << error;
+        QMessageBox::critical(this, "获取附加exe失败", error);
         return;
     }
-    auto configP = std::make_shared<Packager::Config>(readAttachRes.value(), jarPath, splashImagePath, version,
-                                                      outputPath, mainClass, jvmArgs, progArgs, javaPath,
-                                                      jarExtractPath, splashProgramName, splashProgramVersion,
-                                                      launchMode, iconPath, showConsole, requireAdmin);
+
+    auto byte = readAttachRes.value();
+    auto configP = std::make_shared<Packager::Config>(
+            QByteArray(reinterpret_cast<const char *>(byte.data()), static_cast<int>(byte.size())), jarPath,
+            splashImagePath, splashShowProgress, splashShowProgressText, launchTime, version, outputPath, mainClass,
+            jvmArgs, progArgs, javaPath, jarExtractPath, splashProgramName, splashProgramVersion, launchMode, iconPath,
+            showConsole, requireAdmin);
     qInfo() << "开始打包...";
     // 使用QTimer延迟执行，让界面有机会更新
     ui->packageBtn->setEnabled(false);
 
     QTimer::singleShot(100, [this, configP] {
-        const auto config = *configP;
+        const auto &config = *configP;
         if (const auto res = Packager::packageJar(config); res) {
             qInfo() << QString("✓ 打包完成!");
             qInfo() << QString("输出文件: %1").arg(config.outputPath);
@@ -700,9 +638,7 @@ void JarPackagerWindow::on_packageBtn_clicked() {
             const int ret =
                     QMessageBox::question(this, "打包完成", "是否打开输出目录？", QMessageBox::Yes | QMessageBox::No);
             if (ret == QMessageBox::Yes) {
-                const QString outputDir = QFileInfo(config.outputPath).absolutePath();
-                QDesktopServices::openUrl(QUrl::fromLocalFile(outputDir));
-                qInfo() << QString("打开输出目录: %1").arg(outputDir);
+                openDirAndSelect(config.outputPath);
             }
             ui->packageBtn->setEnabled(true);
         } else {
@@ -735,9 +671,7 @@ void JarPackagerWindow::on_modifyExeBtn_clicked() {
             const int ret =
                     QMessageBox::question(this, "修改exe成功", "是否打开目录？", QMessageBox::Yes | QMessageBox::No);
             if (ret == QMessageBox::Yes) {
-                const QString outputDir = QFileInfo(externalExePath).absolutePath();
-                QDesktopServices::openUrl(QUrl::fromLocalFile(outputDir));
-                qInfo() << QString("打开目录: %1").arg(outputDir);
+                openDirAndSelect(externalExePath);
             }
         } else {
             qWarning() << "修改exe失败, " << res.error();
@@ -749,18 +683,20 @@ void JarPackagerWindow::on_modifyExeBtn_clicked() {
 void JarPackagerWindow::on_attachExeAction_triggered() {
     if (const QString attachExePath = QFileDialog::getOpenFileName(this, "选择EXE文件", "", "可执行文件 (*.exe)");
         !attachExePath.isEmpty()) {
-        if (const auto res = Attach::attachExeToCurrent(attachExePath); res) {
-            qInfo() << "完成生成附加 EXE:" << res.value();
+        if (const auto res = Attach::attachExeToCurrent(std::filesystem::path(attachExePath.toStdWString())); res) {
+            const auto outPath = QString::fromStdWString(res.value());
+            qInfo() << "完成生成附加 EXE:" << outPath;
 
             const int ret =
                     QMessageBox::question(this, "附加完成", "是否重启为新的exe？", QMessageBox::Yes | QMessageBox::No);
             if (ret == QMessageBox::Yes) {
-                QProcess::startDetached(res.value());
+                QProcess::startDetached(outPath);
                 close();
             }
         } else {
-            qWarning() << QString("附加失败, %1").arg(res.error());
-            QMessageBox::critical(this, "附加失败", res.error());
+            const auto error = QString::fromStdWString(res.error());
+            qWarning() << QString("附加失败, %1").arg(error);
+            QMessageBox::critical(this, "附加失败", error);
         }
     }
 }
@@ -929,6 +865,9 @@ void JarPackagerWindow::loadConfigFromFile(const QString &filePath) {
     }
     ui->mainClassEdit->setText(config.mainClass);
     ui->enablSplashCheckBox->setChecked(config.enableSplash);
+    ui->splashShowProgressCheckBox->setChecked(config.splashShowProgress);
+    ui->splashShowProgresstTextCheckBox->setChecked(config.splashShowProgressText);
+    ui->launchTimeEdit->setText(QString::number(config.launchTime));
     ui->splashImageEdit->setText(config.splashImagePath);
     ui->splashNameEdit->setText(config.splashProgramName);
     ui->splashVersionEdit->setText(config.splashProgramVersion);
@@ -967,6 +906,10 @@ void JarPackagerWindow::saveConfigToFile(const QString &filePath) {
     }
     config.mainClass = ui->mainClassEdit->text().trimmed();
     config.enableSplash = ui->enablSplashCheckBox->isChecked();
+    config.splashShowProgress = ui->splashShowProgressCheckBox->isChecked();
+    config.splashShowProgressText = ui->splashShowProgresstTextCheckBox->isChecked();
+    config.launchTime = ui->launchTimeEdit->text().trimmed().toInt();
+    config.splashShowProgress = ui->splashShowProgressCheckBox->isChecked();
     config.splashImagePath = ui->splashImageEdit->text().trimmed();
     config.splashProgramName = ui->splashNameEdit->text().trimmed();
     config.splashProgramVersion = ui->splashVersionEdit->text().trimmed();

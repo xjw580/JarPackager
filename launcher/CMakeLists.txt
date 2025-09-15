@@ -1,4 +1,4 @@
-project(Launcher)
+project(launcher)
 
 find_jni()
 
