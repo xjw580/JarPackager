@@ -10,6 +10,9 @@
 #       VERSION "1.0.0"
 #       LICENSE_FILE "${CMAKE_SOURCE_DIR}/LICENSE.txt"
 #       DEPENDS other_custom_target1 other_custom_target2
+#       MINIMAL_DEPLOYMENT ON  # 启用最小化部署
+#       EXCLUDE_MODULES network sql multimedia  # 排除特定模块
+#       INSTALLED_EXE_NAME "CustomName"  # 安装后的exe名称
 #   )
 #
 # 可选参数:
@@ -20,6 +23,10 @@
 #   CREATE_SHORTCUTS - 是否创建快捷方式 (默认: ON)
 #   REGISTER_FILE_TYPES - 要注册的文件类型列表
 #   DEPENDS - 依赖的其他目标列表
+#   MINIMAL_DEPLOYMENT - 启用最小化部署模式 (默认: OFF)
+#   EXCLUDE_MODULES - 要排除的Qt模块列表
+#   INCLUDE_MODULES - 强制包含的Qt模块列表
+#   INSTALLED_EXE_NAME - 安装后的exe名称（默认使用PACKAGE_NAME）
 
 include_guard(GLOBAL)
 
@@ -51,6 +58,9 @@ function(find_qt_deployment_tools)
                     --no-translations
                     --no-system-d3d-compiler
                     --no-opengl-sw
+                    --no-compiler-runtime
+                    --no-quick-import
+                    --no-virtualkeyboard
                     PARENT_SCOPE
             )
             message(STATUS "找到windeployqt: ${QT_DEPLOYQT_EXECUTABLE}")
@@ -146,7 +156,7 @@ function(create_installer_configs)
     cmake_parse_arguments(
             ARG
             ""
-            "TARGET_NAME;PACKAGE_NAME;PACKAGE_DESCRIPTION;VERSION;LICENSE_FILE;INSTALLER_DIR;PUBLISHER;INSTALLER_TITLE"
+            "TARGET_NAME;PACKAGE_NAME;PACKAGE_DESCRIPTION;VERSION;LICENSE_FILE;INSTALLER_DIR;PUBLISHER;INSTALLER_TITLE;INSTALLED_EXE_NAME"
             "REGISTER_FILE_TYPES"
             ${ARGN}
     )
@@ -160,13 +170,26 @@ function(create_installer_configs)
         set(ARG_INSTALLER_TITLE "${ARG_PACKAGE_NAME} 安装程序")
     endif()
 
-    # 设置可执行文件后缀
+    # 设置安装后的exe名称
+    if(NOT ARG_INSTALLED_EXE_NAME)
+        # 将PACKAGE_NAME转换为合法的文件名（移除特殊字符）
+        string(REPLACE " " "_" SAFE_EXE_NAME "${ARG_PACKAGE_NAME}")
+        string(REPLACE "." "_" SAFE_EXE_NAME "${SAFE_EXE_NAME}")
+        string(REPLACE "/" "_" SAFE_EXE_NAME "${SAFE_EXE_NAME}")
+        string(REPLACE "\\" "_" SAFE_EXE_NAME "${SAFE_EXE_NAME}")
+        set(ARG_INSTALLED_EXE_NAME "${SAFE_EXE_NAME}")
+    endif()
+
+    # 设置文件名
     if(WIN32)
-        set(PACKAGE_FILE "${ARG_TARGET_NAME}.exe")
+        set(ORIGINAL_EXE "${ARG_TARGET_NAME}.exe")
+        set(INSTALLED_EXE "${ARG_INSTALLED_EXE_NAME}.exe")
     elseif(APPLE)
-        set(PACKAGE_FILE "${ARG_TARGET_NAME}.app")
+        set(ORIGINAL_EXE "${ARG_TARGET_NAME}.app")
+        set(INSTALLED_EXE "${ARG_INSTALLED_EXE_NAME}.app")
     else()
-        set(PACKAGE_FILE "${ARG_TARGET_NAME}")
+        set(ORIGINAL_EXE "${ARG_TARGET_NAME}")
+        set(INSTALLED_EXE "${ARG_INSTALLED_EXE_NAME}")
     endif()
 
     # 创建config.xml
@@ -181,7 +204,7 @@ function(create_installer_configs)
     <AdminTargetDir>@ApplicationsDir@/${ARG_PACKAGE_NAME}</AdminTargetDir>
     <WizardStyle>Modern</WizardStyle>
     <TitleColor>#2c3e50</TitleColor>
-    <RunProgram>@TargetDir@/${PACKAGE_FILE}</RunProgram>
+    <RunProgram>@TargetDir@/${INSTALLED_EXE}</RunProgram>
     <RunProgramDescription>启动 ${ARG_PACKAGE_NAME}</RunProgramDescription>
     <AllowSpaceInPath>true</AllowSpaceInPath>
     <AllowNonAsciiCharacters>true</AllowNonAsciiCharacters>
@@ -212,14 +235,14 @@ function(create_installer_configs)
         string(APPEND FILE_ASSOCIATION_CODE "
         component.addOperation(\"RegisterFileType\",
             \"${file_type}\",
-            \"@TargetDir@/${PACKAGE_FILE} %1\",
+            \"@TargetDir@/${INSTALLED_EXE} %1\",
             \"${ARG_PACKAGE_NAME} - ${file_type} File\",
             \"application/${file_type}\",
-            \"@TargetDir@/${PACKAGE_FILE},0\"
+            \"@TargetDir@/${INSTALLED_EXE},0\"
         );")
     endforeach()
 
-    # 创建installscript.qs
+    # 创建installscript.qs - 包含重命名操作
     file(WRITE "${ARG_INSTALLER_DIR}/packages/${ARG_TARGET_NAME}/meta/installscript.qs" "function Component()
 {
     // 安装组件构造函数
@@ -229,29 +252,41 @@ Component.prototype.createOperations = function()
 {
     component.createOperations();
 
+    // 如果exe名称不同，重命名文件
+    if (\"${ORIGINAL_EXE}\" != \"${INSTALLED_EXE}\") {
+        // 重命名exe文件
+        if (systemInfo.productType === \"windows\") {
+            // Windows下重命名
+            component.addOperation(\"Move\",
+                \"@TargetDir@/${ORIGINAL_EXE}\",
+                \"@TargetDir@/${INSTALLED_EXE}\"
+            );
+        }
+    }
+
     if (systemInfo.productType === \"windows\") {
         // 创建开始菜单快捷方式
         component.addOperation(\"CreateShortcut\",
-            \"@TargetDir@/${PACKAGE_FILE}\",
+            \"@TargetDir@/${INSTALLED_EXE}\",
             \"@StartMenuDir@/${ARG_PACKAGE_NAME}.lnk\",
             \"workingDirectory=@TargetDir@\",
-            \"iconPath=@TargetDir@/${PACKAGE_FILE}\",
+            \"iconPath=@TargetDir@/${INSTALLED_EXE}\",
             \"description=${ARG_PACKAGE_DESCRIPTION}\");
 
         // 创建桌面快捷方式
         component.addOperation(\"CreateShortcut\",
-            \"@TargetDir@/${PACKAGE_FILE}\",
+            \"@TargetDir@/${INSTALLED_EXE}\",
             \"@DesktopDir@/${ARG_PACKAGE_NAME}.lnk\",
             \"workingDirectory=@TargetDir@\",
-            \"iconPath=@TargetDir@/${PACKAGE_FILE}\",
+            \"iconPath=@TargetDir@/${INSTALLED_EXE}\",
             \"description=${ARG_PACKAGE_DESCRIPTION}\");
         ${FILE_ASSOCIATION_CODE}
     }
 
     if (systemInfo.productType === \"osx\") {
         component.addOperation(\"CreateLink\",
-            \"@TargetDir@/${PACKAGE_FILE}\",
-            \"@ApplicationsDir@/${PACKAGE_FILE}\");
+            \"@TargetDir@/${INSTALLED_EXE}\",
+            \"@ApplicationsDir@/${INSTALLED_EXE}\");
     }
 }
 
@@ -274,15 +309,19 @@ Component.prototype.beginInstallation = function()
         file(WRITE "${ARG_INSTALLER_DIR}/packages/${ARG_TARGET_NAME}/meta/license.txt" "")
         message(WARNING "使用空白许可证")
     endif()
+
+    # 将信息传递给父作用域
+    set(INSTALLED_EXE_NAME "${ARG_INSTALLED_EXE_NAME}" PARENT_SCOPE)
+    set(ORIGINAL_EXE_NAME "${ARG_TARGET_NAME}" PARENT_SCOPE)
 endfunction()
 
 # ========== 主函数：设置Qt部署 ==========
 function(setup_qt_deployment)
     cmake_parse_arguments(
             ARG
-            "CREATE_SHORTCUTS"
-            "TARGET_NAME;PACKAGE_NAME;PACKAGE_DESCRIPTION;VERSION;LICENSE_FILE;OUTPUT_DIR;INSTALLER_TITLE;PUBLISHER"
-            "DEPLOY_FLAGS;REGISTER_FILE_TYPES;DEPENDS"
+            "CREATE_SHORTCUTS;MINIMAL_DEPLOYMENT"
+            "TARGET_NAME;PACKAGE_NAME;PACKAGE_DESCRIPTION;VERSION;LICENSE_FILE;OUTPUT_DIR;INSTALLER_TITLE;PUBLISHER;INSTALLED_EXE_NAME"
+            "DEPLOY_FLAGS;REGISTER_FILE_TYPES;DEPENDS;EXCLUDE_MODULES;INCLUDE_MODULES"
             ${ARGN}
     )
 
@@ -342,11 +381,75 @@ function(setup_qt_deployment)
             INSTALLER_DIR "${INSTALLER_DIR}"
             PUBLISHER "${ARG_PUBLISHER}"
             INSTALLER_TITLE "${ARG_INSTALLER_TITLE}"
+            INSTALLED_EXE_NAME "${ARG_INSTALLED_EXE_NAME}"
             REGISTER_FILE_TYPES ${ARG_REGISTER_FILE_TYPES}
     )
 
     # 合并部署标志
-    set(DEPLOYQT_FLAGS ${DEPLOYQT_DEFAULT_FLAGS} ${ARG_DEPLOY_FLAGS})
+    set(DEPLOYQT_FLAGS ${DEPLOYQT_DEFAULT_FLAGS})
+
+    # 处理最小化部署选项
+    if(ARG_MINIMAL_DEPLOYMENT)
+        if(WIN32)
+            list(APPEND DEPLOYQT_FLAGS
+                    --no-network
+                    --no-sql
+                    --no-multimedia
+                    --no-multimediawidgets
+                    --no-multimediaquick
+                    --no-3dcore
+                    --no-3drender
+                    --no-3dinput
+                    --no-3dlogic
+                    --no-3dextras
+                    --no-3danimation
+                    --no-charts
+                    --no-datavisualization
+                    --no-serialport
+                    --no-serialbus
+                    --no-nfc
+                    --no-websockets
+                    --no-webenginecore
+                    --no-webengine
+                    --no-webview
+                    --no-remoteobjects
+                    --no-sensors
+                    --no-bluetooth
+                    --no-gamepad
+                    --no-location
+                    --no-waylandcompositor
+                    --no-concurrent
+                    --no-xml
+                    --no-printsupport
+                    --no-help
+                    --no-pdf
+                    --no-quickcontrols
+                    --no-quickcontrols2
+                    --no-quicktemplates2
+                    --no-quickwidgets
+                    --no-scxml
+                    --no-test
+            )
+        endif()
+    endif()
+
+    # 处理排除的模块
+    foreach(module ${ARG_EXCLUDE_MODULES})
+        if(WIN32)
+            list(APPEND DEPLOYQT_FLAGS "--no-${module}")
+        endif()
+    endforeach()
+
+    # 处理包含的模块（仅限Windows）
+    foreach(module ${ARG_INCLUDE_MODULES})
+        if(WIN32)
+            # 移除对应的 --no-xxx 标志
+            list(REMOVE_ITEM DEPLOYQT_FLAGS "--no-${module}")
+        endif()
+    endforeach()
+
+    # 添加用户指定的额外标志
+    list(APPEND DEPLOYQT_FLAGS ${ARG_DEPLOY_FLAGS})
 
     # ========== 创建部署目标 ==========
     if(QT_DEPLOYQT_EXECUTABLE)
@@ -424,7 +527,7 @@ function(setup_qt_deployment)
                 -c "${INSTALLER_CONFIG_DIR}/config.xml"
                 -p "${INSTALLER_PACKAGES_DIR}"
                 "${INSTALLER_DIR}/${ARG_PACKAGE_NAME}_installer${CMAKE_EXECUTABLE_SUFFIX}"
-                COMMENT "创建 ${ARG_PACKAGE_NAME} 离线安装程序"
+                COMMENT "创建 ${ARG_PACKAGE_NAME} 离线安装程序, "${INSTALLER_DIR}/${ARG_PACKAGE_NAME}_installer${CMAKE_EXECUTABLE_SUFFIX}""
         )
 
         # 在线安装程序
@@ -435,12 +538,18 @@ function(setup_qt_deployment)
                 -c "${INSTALLER_CONFIG_DIR}/config.xml"
                 -p "${INSTALLER_PACKAGES_DIR}"
                 "${INSTALLER_DIR}/${ARG_PACKAGE_NAME}_online_installer${CMAKE_EXECUTABLE_SUFFIX}"
-                COMMENT "创建 ${ARG_PACKAGE_NAME} 在线安装程序"
+                COMMENT "创建 ${ARG_PACKAGE_NAME} 在线安装程序, "${INSTALLER_DIR}/${ARG_PACKAGE_NAME}_online_installer${CMAKE_EXECUTABLE_SUFFIX}""
         )
 
         message(STATUS "${ARG_PACKAGE_NAME} 安装程序构建目标:")
         message(STATUS "  cmake --build . --target installer-${ARG_TARGET_NAME}        # 离线安装程序")
         message(STATUS "  cmake --build . --target online-installer-${ARG_TARGET_NAME} # 在线安装程序")
+        if(ARG_INSTALLED_EXE_NAME)
+            message(STATUS "  安装后exe名称: ${ARG_INSTALLED_EXE_NAME}${CMAKE_EXECUTABLE_SUFFIX}")
+        else()
+            string(REPLACE " " "_" SAFE_NAME "${ARG_PACKAGE_NAME}")
+            message(STATUS "  安装后exe名称: ${SAFE_NAME}${CMAKE_EXECUTABLE_SUFFIX}")
+        endif()
     else()
         message(WARNING "未找到Qt Installer Framework工具 (binarycreator)")
         message(STATUS "请安装Qt Installer Framework或设置正确的路径")
@@ -452,13 +561,32 @@ function(setup_qt_deployment)
             COMMENT "清理 ${ARG_PACKAGE_NAME} 安装程序文件..."
     )
 
+    # ========== 打印部署配置信息 ==========
+    if(ARG_MINIMAL_DEPLOYMENT OR ARG_EXCLUDE_MODULES OR ARG_INSTALLED_EXE_NAME)
+        message(STATUS "")
+        message(STATUS "========== ${ARG_PACKAGE_NAME} 部署配置 ==========")
+        if(ARG_MINIMAL_DEPLOYMENT)
+            message(STATUS "最小化部署: 已启用")
+        endif()
+        if(ARG_EXCLUDE_MODULES)
+            message(STATUS "排除的模块: ${ARG_EXCLUDE_MODULES}")
+        endif()
+        if(ARG_INCLUDE_MODULES)
+            message(STATUS "包含的模块: ${ARG_INCLUDE_MODULES}")
+        endif()
+        if(ARG_INSTALLED_EXE_NAME)
+            message(STATUS "安装后exe名称: ${ARG_INSTALLED_EXE_NAME}")
+        endif()
+        message(STATUS "==========================================")
+    endif()
+
     # ========== 安装配置 ==========
-#    include(GNUInstallDirs)
-#    install(TARGETS ${ARG_TARGET_NAME}
-#            BUNDLE DESTINATION .
-#            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-#            RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-#    )
+    #    include(GNUInstallDirs)
+    #    install(TARGETS ${ARG_TARGET_NAME}
+    #            BUNDLE DESTINATION .
+    #            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    #            RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    #    )
 endfunction()
 
 # ========== 便捷宏 ==========
@@ -468,3 +596,68 @@ macro(add_qt_installer target_name)
             ${ARGN}
     )
 endmacro()
+
+# ========== 自动分析并最小化部署 ==========
+function(auto_minimize_deployment target_name)
+    # 获取目标链接的库
+    get_target_property(LINKED_LIBS ${target_name} LINK_LIBRARIES)
+
+    set(USED_MODULES "")
+    set(EXCLUDE_MODULES "")
+
+    # 分析实际使用的Qt模块
+    foreach(lib ${LINKED_LIBS})
+        if(lib MATCHES "Qt.*::Core")
+            list(APPEND USED_MODULES "core")
+        elseif(lib MATCHES "Qt.*::Widgets")
+            list(APPEND USED_MODULES "widgets" "gui")
+        elseif(lib MATCHES "Qt.*::Network")
+            list(APPEND USED_MODULES "network")
+        elseif(lib MATCHES "Qt.*::Sql")
+            list(APPEND USED_MODULES "sql")
+        elseif(lib MATCHES "Qt.*::Multimedia")
+            list(APPEND USED_MODULES "multimedia")
+        elseif(lib MATCHES "Qt.*::Quick")
+            list(APPEND USED_MODULES "quick" "qml")
+        elseif(lib MATCHES "Qt.*::PrintSupport")
+            list(APPEND USED_MODULES "printsupport")
+        elseif(lib MATCHES "Qt.*::Svg")
+            list(APPEND USED_MODULES "svg")
+        elseif(lib MATCHES "Qt.*::Xml")
+            list(APPEND USED_MODULES "xml")
+        elseif(lib MATCHES "Qt.*::Concurrent")
+            list(APPEND USED_MODULES "concurrent")
+        endif()
+    endforeach()
+
+    # 所有可能的Qt模块
+    set(ALL_MODULES
+            network sql multimedia multimediawidgets quick qml
+            printsupport svg concurrent xml test dbus help
+            designer positioning 3dcore 3drender 3dinput 3dlogic
+            3dextras 3danimation charts datavisualization
+            serialport serialbus webenginecore webengine websockets
+            bluetooth gamepad location nfc remoteobjects sensors
+            waylandcompositor webview virtualkeyboard pdf
+            quickcontrols quickcontrols2 quicktemplates2 quickwidgets
+            scxml
+    )
+
+    # 确定要排除的模块
+    foreach(module ${ALL_MODULES})
+        if(NOT module IN_LIST USED_MODULES)
+            list(APPEND EXCLUDE_MODULES ${module})
+        endif()
+    endforeach()
+
+    message(STATUS "自动最小化部署分析:")
+    message(STATUS "  使用的模块: ${USED_MODULES}")
+    message(STATUS "  将排除: ${EXCLUDE_MODULES}")
+
+    # 设置部署
+    setup_qt_deployment(
+            TARGET_NAME ${target_name}
+            EXCLUDE_MODULES ${EXCLUDE_MODULES}
+            ${ARGN}
+    )
+endfunction()

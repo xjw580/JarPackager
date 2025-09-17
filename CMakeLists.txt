@@ -70,7 +70,9 @@ if (CMAKE_SIZEOF_VOID_P EQUAL 8)
     setup_qt_deployment(
             TARGET_NAME packager
             PACKAGE_NAME ${PROJECT_NAME}
+            INSTALLED_EXE_NAME ${PROJECT_NAME}
             VERSION ${PROJECT_VERSION}
+            EXCLUDE_MODULES network pdf svg
             LICENSE_FILE "${CMAKE_SOURCE_DIR}/license.txt"
             PACKAGE_DESCRIPTION "包含资源文件的Qt应用程序"
             DEPENDS execute_attacher  # 添加依赖
