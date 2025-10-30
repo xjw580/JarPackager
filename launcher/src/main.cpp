@@ -15,7 +15,49 @@ import std;
 struct Footer {
     uint64_t timestamp;
 };
+// ZIP End of Central Directory 记录结构
+struct EndOfCentralDirectory {
+    uint32_t signature;          // 0x06054b50
+    uint16_t diskNumber;
+    uint16_t centralDirDiskNumber;
+    uint16_t recordsOnDisk;
+    uint16_t totalRecords;
+    uint32_t centralDirSize;
+    uint32_t centralDirOffset;
+    uint16_t commentLength;
+};
 #pragma pack(pop)
+
+// 查找 ZIP 文件的 End of Central Directory 记录
+static std::expected<size_t, std::wstring> findEOCD(const std::vector<uint8_t>& data) {
+    const uint32_t EOCD_SIGNATURE = 0x06054b50;
+    const size_t MIN_EOCD_SIZE = 22; // EOCD 最小大小
+
+    if (data.size() < MIN_EOCD_SIZE) {
+        return std::unexpected{L"文件太小，不是有效的 ZIP 文件"};
+    }
+
+    // 从文件末尾开始搜索 EOCD 签名
+    // 最多搜索 65535 + 22 字节（最大注释长度 + EOCD 大小）
+    size_t searchStart = (data.size() > 65557) ? (data.size() - 65557) : 0;
+
+    for (size_t i = data.size() - MIN_EOCD_SIZE; i >= searchStart; --i) {
+        uint32_t sig = *reinterpret_cast<const uint32_t*>(&data[i]);
+        if (sig == EOCD_SIGNATURE) {
+            // 验证这确实是 EOCD（通过检查注释长度是否正确）
+            size_t commentLengthOffset = i + 20;
+            uint16_t commentLength = *reinterpret_cast<const uint16_t*>(&data[commentLengthOffset]);
+
+            // EOCD + 注释应该正好到文件末尾
+            if (i + MIN_EOCD_SIZE + commentLength == data.size()) {
+                return i;
+            }
+        }
+        if (i == searchStart) break;
+    }
+
+    return std::unexpected{L"未找到有效的 ZIP 结束标记"};
+}
 
 // UTF-8和宽字符转换辅助函数
 std::string wstringToUtf8(const std::wstring &wstr) {
@@ -223,39 +265,50 @@ std::expected<bool, std::wstring> extractJarFile(const std::wstring &executableP
     if (!inFile.is_open()) {
         return std::unexpected{L"无法读取可执行文件: " + executablePath};
     }
+
+    // 先读取 JAR 数据到内存
+    inFile.seekg(jarOffset);
+    std::vector<uint8_t> jarData(jarSize);
+    inFile.read(reinterpret_cast<char*>(jarData.data()), jarSize);
+    inFile.close();
+
+    if (inFile.gcount() != static_cast<std::streamsize>(jarSize)) {
+        return std::unexpected{L"读取JAR数据时发生错误"};
+    }
+
+    // 查找 EOCD 位置
+    auto eocdResult = findEOCD(jarData);
+    if (!eocdResult.has_value()) {
+        return std::unexpected{L"JAR 文件格式无效: " + eocdResult.error()};
+    }
+
+    size_t eocdPos = eocdResult.value();
+    EndOfCentralDirectory* eocd = reinterpret_cast<EndOfCentralDirectory*>(&jarData[eocdPos]);
+
+    // 更新 EOCD 中的注释长度字段
+    uint16_t oldCommentLength = eocd->commentLength;
+    eocd->commentLength = sizeof(Footer);
+
+    // 准备输出
     SetFileAttributesW(jarPath.c_str(), FILE_ATTRIBUTE_NORMAL);
     std::ofstream outFile(jarPath, std::ios::binary);
     if (!outFile.is_open()) {
         return std::unexpected{L"无法创建输出文件: " + jarPath};
     }
 
-    inFile.seekg(jarOffset);
-    constexpr size_t bufferSize = 64 * 1024;
-    std::vector<char> buffer(bufferSize);
-    uint64_t remainingBytes = jarSize;
+    // 写入 JAR 数据（不包括原有注释）
+    size_t jarDataEnd = jarSize - oldCommentLength;
+    outFile.write(reinterpret_cast<const char*>(jarData.data()), jarDataEnd);
 
-    while (remainingBytes > 0) {
-        size_t bytesToRead = std::min(static_cast<uint64_t>(bufferSize), remainingBytes);
-        inFile.read(buffer.data(), bytesToRead);
+    // 写入时间戳作为新的注释
+    outFile.write(reinterpret_cast<const char*>(&footer), sizeof(Footer));
 
-        if (inFile.gcount() != static_cast<std::streamsize>(bytesToRead)) {
-            return std::unexpected{L"读取JAR数据时发生错误"};
-        }
-
-        outFile.write(buffer.data(), bytesToRead);
-        if (outFile.fail()) {
-            return std::unexpected{L"写入JAR文件时发生错误"};
-        }
-
-        remainingBytes -= bytesToRead;
-    }
-
-    outFile.write(reinterpret_cast<const char *>(&footer), sizeof(Footer));
-    inFile.close();
     outFile.close();
     SetFileAttributesW(jarPath.c_str(), FILE_ATTRIBUTE_HIDDEN);
+
     return true;
 }
+
 
 std::wstring calculateMD5(const std::vector<std::uint8_t> &data) {
     HCRYPTPROV hProv = 0;
@@ -324,20 +377,39 @@ std::expected<bool, std::wstring> verifyJarFile(const std::wstring &jarPath, con
     if (!inFile) {
         return std::unexpected{L"读取jar文件失败, " + jarPath};
     }
+
+    // 读取整个文件
     inFile.seekg(0, std::ios::end);
-    const int64_t fileSize = inFile.tellg();
-    constexpr auto footerSize = sizeof(Footer);
-    if (fileSize < footerSize) {
-        return std::unexpected{L"时间戳校验失败"};
+    const size_t fileSize = inFile.tellg();
+    inFile.seekg(0, std::ios::beg);
+
+    std::vector<uint8_t> fileData(fileSize);
+    inFile.read(reinterpret_cast<char*>(fileData.data()), fileSize);
+    inFile.close();
+
+    // 查找 EOCD
+    auto eocdResult = findEOCD(fileData);
+    if (!eocdResult.has_value()) {
+        return std::unexpected{L"无效的 JAR 文件格式: " + eocdResult.error()};
     }
-    Footer footer;
-    inFile.seekg(fileSize - footerSize);
-    inFile.read(reinterpret_cast<char *>(&footer), footerSize);
-    if (footer.timestamp == timestamp) {
+
+    size_t eocdPos = eocdResult.value();
+    EndOfCentralDirectory* eocd = reinterpret_cast<EndOfCentralDirectory*>(&fileData[eocdPos]);
+
+    // 检查是否有注释
+    if (eocd->commentLength != sizeof(Footer)) {
+        return std::unexpected{L"时间戳校验失败: 注释大小不匹配"};
+    }
+
+    // 读取注释区域的时间戳
+    size_t commentStart = eocdPos + sizeof(EndOfCentralDirectory);
+    Footer* footer = reinterpret_cast<Footer*>(&fileData[commentStart]);
+
+    if (footer->timestamp == timestamp) {
         return true;
     }
-    inFile.close();
-    return std::unexpected{L"时间戳校验失败"};
+
+    return std::unexpected{L"时间戳校验失败: 时间戳不匹配"};
 }
 
 // 使用java.exe启动JAR
