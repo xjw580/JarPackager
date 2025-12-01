@@ -24,12 +24,12 @@ Description:
 #include <QtCore/QMutex>
 #include <QtCore/QStandardPaths>
 #include <QtCore/QThread>
-#include <QtCore/QTimer>
-#include <QtCore/QUrl>
 #include <QtGui/QCloseEvent>
-#include <QtGui/QDesktopServices>
+#include <QProgressDialog>
 #include <attach.h>
 #include <modify.h>
+#include <Windows.h>
+#include <ShlObj.h>
 
 #include "jarcommon.h"
 #include "ui_jarpackager.h"
@@ -41,7 +41,7 @@ JarPackagerWindow *JarPackagerWindow::instance = nullptr;
 static QMutex logMutex;
 static bool loggingEnabled = false;
 
-QJsonObject SoftConfig::toJson() const {
+QJsonObject PackageConfig::toJson() const {
     QJsonObject obj;
     obj["jarPath"] = jarPath;
     obj["outputPath"] = outputPath;
@@ -66,7 +66,7 @@ QJsonObject SoftConfig::toJson() const {
     return obj;
 }
 
-void SoftConfig::fromJson(const QJsonObject &obj) {
+void PackageConfig::fromJson(const QJsonObject &obj) {
     jarPath = obj.value("jarPath").toString();
     outputPath = obj.value("outputPath").toString();
     QJsonArray jvmArray = obj["jvmArgs"].toArray();
@@ -95,6 +95,16 @@ void SoftConfig::fromJson(const QJsonObject &obj) {
     showConsole = obj.value("showConsole").toBool(false);
     requireAdmin = obj.value("requireAdmin").toBool(false);
     externalExePath = obj.value("externalExePath").toString();
+}
+
+QJsonObject SoftConfig::toJson() const {
+    QJsonObject obj;
+    obj["lastSoftConfigPath"] = lastSoftConfigPath;
+    return obj;
+}
+
+void SoftConfig::fromJson(const QJsonObject &obj) {
+    lastSoftConfigPath = obj["lastSoftConfigPath"].toString();
 }
 
 
@@ -170,23 +180,23 @@ std::expected<bool, QString> Packager::packageJar(const Config &config) {
 
     // 创建Footer结构
     const JarCommon::JarFooter footer{
-            JarCommon::JAR_MAGIC,
-            static_cast<unsigned long long>(exeSize),
-            static_cast<unsigned long long>(jarData.size()),
-            static_cast<unsigned long long>(pngData.size()),
-            config.splashShowProgress,
-            config.splashShowProgressText,
-            config.launchTime,
-            static_cast<unsigned long long>(timestamp),
-            config.javaVersion,
-            static_cast<unsigned int>(mainClassBytes.size()),
-            static_cast<unsigned int>(jvmArgsBytes.size()),
-            static_cast<unsigned int>(programArgsBytes.size()),
-            static_cast<unsigned int>(javaPathBytes.size()),
-            static_cast<unsigned int>(jarExtractPathBytes.size()),
-            static_cast<unsigned int>(splashProgramNameBytes.size()),
-            static_cast<unsigned int>(splashProgramVersionBytes.size()),
-            config.launchMode,
+        JarCommon::JAR_MAGIC,
+        static_cast<unsigned long long>(exeSize),
+        static_cast<unsigned long long>(jarData.size()),
+        static_cast<unsigned long long>(pngData.size()),
+        config.splashShowProgress,
+        config.splashShowProgressText,
+        config.launchTime,
+        static_cast<unsigned long long>(timestamp),
+        config.javaVersion,
+        static_cast<unsigned int>(mainClassBytes.size()),
+        static_cast<unsigned int>(jvmArgsBytes.size()),
+        static_cast<unsigned int>(programArgsBytes.size()),
+        static_cast<unsigned int>(javaPathBytes.size()),
+        static_cast<unsigned int>(jarExtractPathBytes.size()),
+        static_cast<unsigned int>(splashProgramNameBytes.size()),
+        static_cast<unsigned int>(splashProgramVersionBytes.size()),
+        config.launchMode,
     };
 
     // 写入Footer结构体
@@ -196,7 +206,7 @@ std::expected<bool, QString> Packager::packageJar(const Config &config) {
     return true;
 }
 
-std::expected<bool, QString> Packager::extractJarInfo(const QString &jarPath, SoftConfig &jarInfo) {
+std::expected<bool, QString> Packager::extractJarInfo(const QString &jarPath, PackageConfig &jarInfo) {
     QFile file(jarPath);
     if (!file.open(QIODevice::ReadOnly)) {
         return std::unexpected{QString("无法打开文件: %1").arg(file.errorString())};
@@ -246,6 +256,7 @@ std::expected<bool, QString> Packager::extractJarInfo(const QString &jarPath, So
 
     return true;
 }
+
 std::expected<bool, QString> Packager::modifyExe(const QString &exePath, const QString &iconPath,
                                                  const bool showConsole, const bool requireAdmin) {
     QFile exeFile(exePath);
@@ -365,6 +376,13 @@ JarPackagerWindow::JarPackagerWindow(QWidget *parent) : QMainWindow(parent), ui(
     if (const auto &args = QCoreApplication::arguments(); args.size() > 1) {
         ui->jarEdit->setText(args.at(1));
     }
+    const auto softConfigPath = QDir::current().filePath(softConfigName);
+    if (QFile(softConfigPath).exists()) {
+        loadSoftConfig(softConfigPath);
+        if (QFile(currentConfigPath).exists()) {
+            loadPackageConfig(currentConfigPath);
+        }
+    }
 }
 
 JarPackagerWindow::~JarPackagerWindow() {
@@ -453,17 +471,20 @@ void JarPackagerWindow::appendLogMessage(const QString &message) {
     loggingEnabled = true;
 }
 
-void JarPackagerWindow::openDirAndSelect(const QString &filePath) {
-    const QString outputDir = QFileInfo(filePath).absolutePath();
-#ifdef _WIN32
-    const QString explorer = "explorer.exe";
-    QStringList args;
-    args << "/select," << QDir::toNativeSeparators(filePath);
-    QProcess::startDetached(explorer, args);
-#else
-    QDesktopServices::openUrl(QUrl::fromLocalFile(outputDir));
-#endif
-    qInfo() << QString("打开输出目录: %1").arg(outputDir);
+bool JarPackagerWindow::openAndSelectFile(const QString &path) {
+    QString native = QDir::toNativeSeparators(path);
+    std::wstring wpath = native.toStdWString();
+
+    PIDLIST_ABSOLUTE pidl = nullptr;
+    HRESULT hr = SHParseDisplayName(wpath.c_str(), nullptr, &pidl, 0, nullptr);
+    if (FAILED(hr))
+        return false;
+
+    // 选中 1 个文件
+    hr = SHOpenFolderAndSelectItems(pidl, 0, nullptr, 0);
+
+    CoTaskMemFree(pidl);
+    return SUCCEEDED(hr);
 }
 
 void JarPackagerWindow::on_enablSplashCheckBox_stateChanged(const int state) {
@@ -487,6 +508,7 @@ void JarPackagerWindow::on_outBtn_clicked() {
         ui->outEdit->setText(out_file);
     }
 }
+
 void JarPackagerWindow::on_javaPathBtn_clicked() {
     if (const QString dir = QFileDialog::getExistingDirectory(this, ""); !dir.isEmpty()) {
         auto java_dir = QDir(dir);
@@ -598,7 +620,7 @@ void JarPackagerWindow::on_packageBtn_clicked() {
     const QString javaPath = ui->javaPathEdit->text().trimmed();
 
     qInfo() << QString("启动模式: %1")
-                       .arg(ui->modeJvm->isChecked() ? ui->modeJvm->text().trimmed() : ui->modeJava->text().trimmed());
+            .arg(ui->modeJvm->isChecked() ? ui->modeJvm->text().trimmed() : ui->modeJava->text().trimmed());
     if (!jvmArgs.isEmpty()) {
         qInfo() << QString("JVM参数: %1").arg(jvmArgs.join(" "));
     }
@@ -620,42 +642,47 @@ void JarPackagerWindow::on_packageBtn_clicked() {
 
     auto byte = readAttachRes.value();
     auto configP = std::make_shared<Packager::Config>(
-            QByteArray(reinterpret_cast<const char *>(byte.data()), static_cast<int>(byte.size())), jarPath,
-            splashImagePath, splashShowProgress, splashShowProgressText, launchTime, version, outputPath, mainClass,
-            jvmArgs, progArgs, javaPath, jarExtractPath, splashProgramName, splashProgramVersion, launchMode, iconPath,
-            showConsole, requireAdmin);
+        QByteArray(reinterpret_cast<const char *>(byte.data()), static_cast<int>(byte.size())), jarPath,
+        splashImagePath, splashShowProgress, splashShowProgressText, launchTime, version, outputPath, mainClass,
+        jvmArgs, progArgs, javaPath, jarExtractPath, splashProgramName, splashProgramVersion, launchMode, iconPath,
+        showConsole, requireAdmin);
     qInfo() << "开始打包...";
-    // 使用QTimer延迟执行，让界面有机会更新
-    ui->packageBtn->setEnabled(false);
 
-    QTimer::singleShot(100, [this, configP] {
-        const auto &config = *configP;
-        if (const auto res = Packager::packageJar(config); res) {
-            qInfo() << QString("✓ 打包完成!");
-            qInfo() << QString("输出文件: %1").arg(config.outputPath);
-            updateStatus("打包完成");
+    auto *dialog = new QProgressDialog("打包中...", QString(), 0, 0, this);
+    dialog->setWindowModality(Qt::WindowModal);
+    dialog->setCancelButton(nullptr);
+    dialog->show();
 
-            const int ret =
-                    QMessageBox::question(this, "打包完成", "是否打开输出目录？", QMessageBox::Yes | QMessageBox::No);
-            if (ret == QMessageBox::Yes) {
-                openDirAndSelect(config.outputPath);
+    std::thread t([=] {
+        const auto res = Packager::packageJar(*configP);
+
+        QMetaObject::invokeMethod(this, [=] {
+            dialog->close();
+            dialog->deleteLater();
+
+            if (res) {
+                qInfo() << "✓ 打包完成!";
+                qInfo() << QString("输出文件: %1").arg(configP->outputPath);
+                updateStatus("打包完成");
+
+                if (QMessageBox::question(this, "打包完成", "是否打开输出目录？",
+                                          QMessageBox::Yes | QMessageBox::No) == QMessageBox::Yes) {
+                    openAndSelectFile(configP->outputPath);
+                }
+            } else {
+                qWarning() << QString("✗ 打包失败: %1").arg(res.error());
+                updateStatus("打包失败");
+                QMessageBox::critical(this, "打包失败", res.error());
             }
-            ui->packageBtn->setEnabled(true);
-        } else {
-            qWarning() << QString("✗ 打包失败: %1").arg(res.error());
-            updateStatus("打包失败");
-            QMessageBox::critical(this, "打包失败", res.error());
-            ui->packageBtn->setEnabled(true);
-        }
-
-        ui->packageBtn->setEnabled(true);
+        }, Qt::QueuedConnection);
     });
+    t.detach();
 }
 
 void JarPackagerWindow::on_loadExeBtn_clicked() {
     const QString exePath = QFileDialog::getOpenFileName(
-            this, "选择EXE文件", QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation),
-            "可执行文件 (*.exe)");
+        this, "选择EXE文件", QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation),
+        "可执行文件 (*.exe)");
     if (!exePath.isEmpty()) {
         ui->externalExePathEdit->setText(exePath);
     }
@@ -671,7 +698,7 @@ void JarPackagerWindow::on_modifyExeBtn_clicked() {
             const int ret =
                     QMessageBox::question(this, "修改exe成功", "是否打开目录？", QMessageBox::Yes | QMessageBox::No);
             if (ret == QMessageBox::Yes) {
-                openDirAndSelect(externalExePath);
+                openAndSelectFile(externalExePath);
             }
         } else {
             qWarning() << "修改exe失败, " << res.error();
@@ -714,7 +741,7 @@ void JarPackagerWindow::on_splashImageBtn_clicked() {
 
     const QString filter = "图片文件 (" + formats.join(" ") + ")";
     const QString imageFilePath = QFileDialog::getOpenFileName(
-            this, "选择启动页图片", QStandardPaths::writableLocation(QStandardPaths::PicturesLocation), filter);
+        this, "选择启动页图片", QStandardPaths::writableLocation(QStandardPaths::PicturesLocation), filter);
     if (!imageFilePath.isEmpty()) {
         ui->splashImageEdit->setText(imageFilePath);
         const QPixmap pixmap(imageFilePath);
@@ -728,10 +755,11 @@ void JarPackagerWindow::on_splashImageBtn_clicked() {
         ui->splashView->fitInView(ui->splashView->scene()->sceneRect(), Qt::KeepAspectRatio);
     }
 }
+
 void JarPackagerWindow::on_iconBtn_clicked() {
     const QString iconFilePath = QFileDialog::getOpenFileName(
-            this, "选择图标文件", QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation),
-            "图标文件 (*.icon *.ico)");
+        this, "选择图标文件", QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation),
+        "图标文件 (*.icon *.ico)");
     if (!iconFilePath.isEmpty()) {
         ui->iconPathEdit->setText(iconFilePath);
         const QPixmap pixmap(iconFilePath);
@@ -756,10 +784,11 @@ void JarPackagerWindow::on_modeButtonGroup_idToggled(const int id, const bool ch
 
 void JarPackagerWindow::on_actionLoadConfig_triggered() {
     const QString fileName = QFileDialog::getOpenFileName(
-            this, "选择配置文件", QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation),
-            "JSON配置 (*.json)");
+        this, "选择配置文件", QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation),
+        "JSON配置 (*.json)");
     if (!fileName.isEmpty()) {
-        loadConfigFromFile(fileName);
+        loadPackageConfig(fileName);
+        saveSoftConfig(QDir::current().filePath(softConfigName));
     }
 }
 
@@ -768,14 +797,15 @@ void JarPackagerWindow::on_actionSaveConfig_triggered() {
     if (currentConfigPath.isEmpty()) {
         fileName = QFileDialog::getSaveFileName(this, "保存配置文件",
                                                 QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) +
-                                                        "/jarpackager_config.json",
+                                                "/jarpackager_config.json",
                                                 "JSON配置 (*.json)");
     } else {
         fileName = currentConfigPath;
     }
 
     if (!fileName.isEmpty()) {
-        saveConfigToFile(fileName);
+        savePackageConfig(fileName);
+        saveSoftConfig(QDir::current().filePath(softConfigName));
     }
 }
 
@@ -805,7 +835,8 @@ void JarPackagerWindow::closeEvent(QCloseEvent *event) {
         if (const int ret = QMessageBox::question(this, "保存配置", "配置已修改，是否保存？",
                                                   QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
             ret == QMessageBox::Save) {
-            saveConfigToFile(currentConfigPath);
+            savePackageConfig(currentConfigPath);
+            saveSoftConfig(QDir::current().filePath(softConfigName));
             event->accept();
         } else if (ret == QMessageBox::Discard) {
             qInfo() << "用户选择不保存配置，直接退出";
@@ -818,14 +849,14 @@ void JarPackagerWindow::closeEvent(QCloseEvent *event) {
     }
 }
 
-void JarPackagerWindow::updateStatus(const QString &message) { ui->statusbar->showMessage(message); }
+void JarPackagerWindow::updateStatus(const QString &message) const { ui->statusbar->showMessage(message); }
 
-void JarPackagerWindow::loadConfigFromFile(const QString &filePath) {
-    qInfo() << QString("开始加载配置文件: %1").arg(filePath);
+void JarPackagerWindow::loadPackageConfig(const QString &filePath) {
+    qInfo() << QString("开始加载打包配置文件: %1").arg(filePath);
 
     QFile file(filePath);
     if (!file.open(QIODevice::ReadOnly)) {
-        const QString errorMsg = QString("无法打开配置文件: %1").arg(file.errorString());
+        const QString errorMsg = QString("无法打开打包配置文件: %1").arg(file.errorString());
         qWarning() << errorMsg;
         QMessageBox::critical(this, "错误", errorMsg);
         return;
@@ -836,13 +867,13 @@ void JarPackagerWindow::loadConfigFromFile(const QString &filePath) {
     file.close();
 
     if (parseError.error != QJsonParseError::NoError) {
-        const QString errorMsg = QString("解析配置文件失败: %1").arg(parseError.errorString());
+        const QString errorMsg = QString("解析打包配置文件失败: %1").arg(parseError.errorString());
         qWarning() << errorMsg;
         QMessageBox::critical(this, "错误", errorMsg);
         return;
     }
 
-    SoftConfig config{};
+    PackageConfig config{};
     config.fromJson(doc.object());
 
     // 设置界面值
@@ -857,9 +888,9 @@ void JarPackagerWindow::loadConfigFromFile(const QString &filePath) {
     } else {
         ui->modeJava->setChecked(true);
     }
-    for (auto it = JarCommon::JAVA_VERSION_MAP.cbegin(); it != JarCommon::JAVA_VERSION_MAP.cend(); ++it) {
-        if (it->second == config.javaVersion) {
-            ui->javaVersionComboBox->setCurrentText(QString(it->first.c_str()));
+    for (const auto &[verStr, verCode]: JarCommon::JAVA_VERSION_MAP) {
+        if (verCode == config.javaVersion) {
+            ui->javaVersionComboBox->setCurrentText(QString(verStr.c_str()));
             break;
         }
     }
@@ -878,12 +909,12 @@ void JarPackagerWindow::loadConfigFromFile(const QString &filePath) {
 
     currentConfigPath = filePath;
     configChanged = false;
-    updateStatus(QString("已加载配置: %1").arg(QFileInfo(filePath).baseName()));
-    qInfo() << "已加载配置, " << filePath;
+    updateStatus(QString("已加载打包配置: %1").arg(QFileInfo(filePath).baseName()));
+    qInfo() << "已打包加载配置, " << filePath;
 }
 
-void JarPackagerWindow::saveConfigToFile(const QString &filePath) {
-    SoftConfig config{};
+void JarPackagerWindow::savePackageConfig(const QString &filePath) {
+    PackageConfig config{};
     config.jarPath = ui->jarEdit->text().trimmed();
     config.outputPath = ui->outEdit->text().trimmed();
     config.jvmArgs = ui->jvmArgsEdit->text().split(";", Qt::SkipEmptyParts);
@@ -897,8 +928,9 @@ void JarPackagerWindow::saveConfigToFile(const QString &filePath) {
     }
     config.javaPath = ui->javaPathEdit->text().trimmed();
     config.jarExtractPath = ui->jarExtractPathEdit->text().trimmed();
-    config.launchMode = static_cast<int>(ui->modeJvm->isChecked() ? JarCommon::LaunchMode::DirectJVM
-                                                                  : JarCommon::LaunchMode::JavaExe);
+    config.launchMode = static_cast<int>(ui->modeJvm->isChecked()
+                                             ? JarCommon::LaunchMode::DirectJVM
+                                             : JarCommon::LaunchMode::JavaExe);
     if (const auto &javaVersion = ui->javaVersionComboBox->currentText(); !javaVersion.isEmpty()) {
         if (const std::string &ver = javaVersion.toStdString(); JarCommon::JAVA_VERSION_MAP.contains(ver)) {
             config.javaVersion = JarCommon::JAVA_VERSION_MAP.at(ver);
@@ -920,7 +952,7 @@ void JarPackagerWindow::saveConfigToFile(const QString &filePath) {
 
     QFile file(filePath);
     if (!file.open(QIODevice::WriteOnly)) {
-        const QString errorMsg = QString("无法创建配置文件: %1").arg(file.errorString());
+        const QString errorMsg = QString("无法创建打包配置文件: %1").arg(file.errorString());
         qWarning() << errorMsg;
         QMessageBox::critical(this, "错误", errorMsg);
         return;
@@ -932,6 +964,54 @@ void JarPackagerWindow::saveConfigToFile(const QString &filePath) {
 
     currentConfigPath = filePath;
     configChanged = false;
-    updateStatus(QString("已保存配置: %1").arg(QFileInfo(filePath).baseName()));
-    qInfo() << "✓ 配置文件保存成功, " << filePath;
+    updateStatus(QString("已保存打包配置: %1").arg(QFileInfo(filePath).baseName()));
+    qInfo() << "✓ 打包配置文件保存成功, " << filePath;
+}
+
+void JarPackagerWindow::loadSoftConfig(const QString &filePath) {
+    qInfo() << QString("开始加载软件配置文件: %1").arg(filePath);
+
+    QFile file(filePath);
+    if (!file.open(QIODevice::ReadOnly)) {
+        const QString errorMsg = QString("无法打开软件配置文件: %1").arg(file.errorString());
+        qWarning() << errorMsg;
+        QMessageBox::critical(this, "错误", errorMsg);
+        return;
+    }
+
+    QJsonParseError parseError;
+    QJsonDocument doc = QJsonDocument::fromJson(file.readAll(), &parseError);
+    file.close();
+
+    if (parseError.error != QJsonParseError::NoError) {
+        const QString errorMsg = QString("解析软件配置文件失败: %1").arg(parseError.errorString());
+        qWarning() << errorMsg;
+        QMessageBox::critical(this, "错误", errorMsg);
+        return;
+    }
+
+    SoftConfig config{};
+    config.fromJson(doc.object());
+    currentConfigPath = config.lastSoftConfigPath;
+}
+
+void JarPackagerWindow::saveSoftConfig(const QString &filePath) {
+    SoftConfig config{};
+
+    QFile file(filePath);
+    if (!file.open(QIODevice::WriteOnly)) {
+        const QString errorMsg = QString("无法创建软件配置文件: %1").arg(file.errorString());
+        qWarning() << errorMsg;
+        QMessageBox::critical(this, "错误", errorMsg);
+        return;
+    }
+
+    config.lastSoftConfigPath = currentConfigPath;
+
+    const QJsonDocument doc(config.toJson());
+    file.write(doc.toJson());
+    file.close();
+
+    updateStatus(QString("已保存软件配置: %1").arg(QFileInfo(filePath).baseName()));
+    qInfo() << "✓ 软件配置文件保存成功, " << filePath;
 }
