@@ -13,8 +13,10 @@ Description:
 #include "jarpackager.h"
 
 #include <QBuffer>
+#include <QDir>
 #include <QImageReader>
 #include <QJsonArray>
+#include <QListWidget>
 #include <QMessageBox>
 #include <QProcess>
 #include <QtCore/QDateTime>
@@ -63,6 +65,8 @@ QJsonObject PackageConfig::toJson() const {
     obj["showConsole"] = showConsole;
     obj["requireAdmin"] = requireAdmin;
     obj["externalExePath"] = externalExePath;
+    obj["enableZip"] = enableZip;
+    obj["zipPaths"] = QJsonArray::fromStringList(zipPaths);
     return obj;
 }
 
@@ -95,6 +99,12 @@ void PackageConfig::fromJson(const QJsonObject &obj) {
     showConsole = obj.value("showConsole").toBool(false);
     requireAdmin = obj.value("requireAdmin").toBool(false);
     externalExePath = obj.value("externalExePath").toString();
+    enableZip = obj.value("enableZip").toBool(false);
+    QJsonArray zipArray = obj["zipPaths"].toArray();
+    zipPaths.clear();
+    for (const auto &value: zipArray) {
+        zipPaths.append(value.toString());
+    }
 }
 
 QJsonObject SoftConfig::toJson() const {
@@ -372,6 +382,13 @@ JarPackagerWindow::JarPackagerWindow(QWidget *parent) : QMainWindow(parent), ui(
     connect(ui->iconPathEdit, &QLineEdit::textChanged, [this]() { configChanged = true; });
     connect(ui->showConsoleCheckBox, &QCheckBox::checkStateChanged, [this]() { configChanged = true; });
     connect(ui->requireAdminCheckBox, &QCheckBox::checkStateChanged, [this]() { configChanged = true; });
+    // 压缩包设置
+    connect(ui->enableZipCheckBox, &QCheckBox::checkStateChanged, [this]() { configChanged = true; });
+    connect(ui->zipPathsListWidget->model(), &QAbstractItemModel::rowsInserted, [this]() { configChanged = true; });
+    connect(ui->zipPathsListWidget->model(), &QAbstractItemModel::rowsRemoved, [this]() { configChanged = true; });
+
+    // 初始化压缩包设置
+    on_enableZipCheckBox_stateChanged(ui->enableZipCheckBox->isChecked() ? Qt::Checked : Qt::Unchecked);
 
     if (const auto &args = QCoreApplication::arguments(); args.size() > 1) {
         ui->jarEdit->setText(args.at(1));
@@ -403,7 +420,13 @@ void JarPackagerWindow::setupLogging() {
 }
 
 void JarPackagerWindow::messageHandler(QtMsgType type, const QMessageLogContext &context, const QString &msg) {
-    // 防止递归调用
+    // 使用线程本地变量防止递归调用（每个线程独立）
+    thread_local bool inHandler = false;
+    if (inHandler) {
+        std::cout << msg.toStdString() << std::endl;
+        return;
+    }
+
     QMutexLocker locker(&logMutex);
 
     if (!loggingEnabled || !instance || !instance->ui || !instance->ui->infoBox) {
@@ -436,17 +459,16 @@ void JarPackagerWindow::messageHandler(QtMsgType type, const QMessageLogContext 
 
     // 直接在主线程中更新（如果在主线程）或使用队列调用
     if (QThread::currentThread() == QCoreApplication::instance()->thread()) {
+        inHandler = true;
         instance->appendLogMessage(formattedMsg);
+        inHandler = false;
     } else {
         QMetaObject::invokeMethod(instance, "appendLogMessage", Qt::QueuedConnection, Q_ARG(QString, formattedMsg));
     }
 }
 
 void JarPackagerWindow::appendLogMessage(const QString &message) {
-    // 暂时禁用日志以避免递归
-    loggingEnabled = false;
-
-    // 在主线程中安全地更新UI
+    // 在主线程中安全地更新UI（递归保护已在messageHandler中通过thread_local处理）
     ui->infoBox->append(message);
 
     // 自动滚动到底部
@@ -466,9 +488,6 @@ void JarPackagerWindow::appendLogMessage(const QString &message) {
             lineCount = 300;
         }
     }
-
-    // 重新启用日志
-    loggingEnabled = true;
 }
 
 bool JarPackagerWindow::openAndSelectFile(const QString &path) {
@@ -563,6 +582,13 @@ void JarPackagerWindow::on_packageBtn_clicked() {
     const QString iconPath = ui->iconPathEdit->text().trimmed();
     const auto showConsole = ui->showConsoleCheckBox->isChecked();
     const auto requireAdmin = ui->requireAdminCheckBox->isChecked();
+    // 压缩包设置
+    const bool enableZip = ui->enableZipCheckBox->isChecked();
+    QStringList zipPaths;
+    for (int i = 0; i < ui->zipPathsListWidget->count(); ++i) {
+        zipPaths.append(ui->zipPathsListWidget->item(i)->text());
+    }
+    const QString jarDir = QFileInfo(jarPath).absolutePath();
 
 
     qInfo() << "开始验证打包参数...";
@@ -653,21 +679,103 @@ void JarPackagerWindow::on_packageBtn_clicked() {
     dialog->setCancelButton(nullptr);
     dialog->show();
 
-    std::thread t([=] {
+    std::thread t([=, this] {
         const auto res = Packager::packageJar(*configP);
 
-        QMetaObject::invokeMethod(this, [=] {
+        QString finalOutputPath = configP->outputPath;
+        QString zipError;
+
+        if (res && enableZip) {
+            // 创建zip压缩包
+            const QFileInfo exeInfo(configP->outputPath);
+            const QString zipPath = exeInfo.absolutePath() + "/" + exeInfo.completeBaseName() + ".zip";
+
+            qInfo() << "开始创建压缩包: " << zipPath;
+
+            // 收集要压缩的文件列表
+            QStringList filesToZip;
+            filesToZip.append(configP->outputPath); // exe文件
+
+            // 处理附加路径
+            for (const QString &path: zipPaths) {
+                QString absolutePath;
+                if (QDir::isAbsolutePath(path)) {
+                    absolutePath = path;
+                } else {
+                    // 相对路径：先在JAR文件所在目录查找
+                    absolutePath = QDir(jarDir).absoluteFilePath(path);
+                    if (!QFileInfo::exists(absolutePath)) {
+                        // 如果JAR目录下找不到，则到exe输出路径查找
+                        const QString exeDir = QFileInfo(configP->outputPath).absolutePath();
+                        absolutePath = QDir(exeDir).absoluteFilePath(path);
+                    }
+                }
+                if (QFileInfo::exists(absolutePath)) {
+                    filesToZip.append(absolutePath);
+                    qInfo() << "添加到压缩包: " << absolutePath;
+                } else {
+                    qWarning() << "路径不存在，跳过: " << path << " (已尝试JAR目录和输出目录)";
+                }
+            }
+
+            // 使用PowerShell创建zip
+            // 先删除已存在的zip文件
+            if (QFile::exists(zipPath)) {
+                QFile::remove(zipPath);
+            }
+
+            // 构建PowerShell命令
+            QStringList pathsEscaped;
+            for (const QString &p: filesToZip) {
+                QString escaped = p;
+                escaped.replace("'", "''");
+                pathsEscaped.append("'" + escaped + "'");
+            }
+
+            QString zipPathEscaped = zipPath;
+            zipPathEscaped.replace("'", "''");
+            const QString psCommand = QString(
+                "Compress-Archive -Path %1 -DestinationPath '%2' -Force"
+            ).arg(pathsEscaped.join(","), zipPathEscaped);
+
+            QProcess psProcess;
+            psProcess.start("powershell", QStringList() << "-NoProfile" << "-Command" << psCommand);
+            psProcess.waitForFinished(180000);
+
+            if (psProcess.exitCode() == 0) {
+                qInfo() << "压缩包创建成功: " << zipPath;
+                finalOutputPath = zipPath;
+
+                QFile::remove(configP->outputPath);
+                qInfo() << "已删除临时exe文件: " << configP->outputPath;
+            } else {
+                zipError = QString("创建压缩包失败: %1").arg(QString::fromLocal8Bit(psProcess.readAllStandardError()));
+                qWarning() << zipError;
+            }
+        }
+
+        QMetaObject::invokeMethod(this, [=, this] {
             dialog->close();
             dialog->deleteLater();
 
             if (res) {
-                qInfo() << "✓ 打包完成!";
-                qInfo() << QString("输出文件: %1").arg(configP->outputPath);
-                updateStatus("打包完成");
+                if (enableZip && !zipError.isEmpty()) {
+                    qWarning() << QString("✗ exe打包成功，但压缩包创建失败: %1").arg(zipError);
+                    updateStatus("打包完成，压缩失败");
+                    QMessageBox::warning(this, "部分成功", QString("exe打包成功，但压缩包创建失败:\n%1").arg(zipError));
+                    if (QMessageBox::question(this, "打包完成", "是否打开输出目录？",
+                                              QMessageBox::Yes | QMessageBox::No) == QMessageBox::Yes) {
+                        openAndSelectFile(configP->outputPath);
+                    }
+                } else {
+                    qInfo() << "✓ 打包完成!";
+                    qInfo() << QString("输出文件: %1").arg(finalOutputPath);
+                    updateStatus("打包完成");
 
-                if (QMessageBox::question(this, "打包完成", "是否打开输出目录？",
-                                          QMessageBox::Yes | QMessageBox::No) == QMessageBox::Yes) {
-                    openAndSelectFile(configP->outputPath);
+                    if (QMessageBox::question(this, "打包完成", "是否打开输出目录？",
+                                              QMessageBox::Yes | QMessageBox::No) == QMessageBox::Yes) {
+                        openAndSelectFile(finalOutputPath);
+                    }
                 }
             } else {
                 qWarning() << QString("✗ 打包失败: %1").arg(res.error());
@@ -780,6 +888,66 @@ void JarPackagerWindow::on_modeButtonGroup_idToggled(const int id, const bool ch
     ui->mainClassEdit->setEnabled(enable);
     ui->javaVersionLabel->setEnabled(enable);
     ui->javaVersionComboBox->setEnabled(enable);
+}
+
+void JarPackagerWindow::on_enableZipCheckBox_stateChanged(const int state) {
+    const auto disable = state != Qt::Checked;
+    for (auto *child: ui->zipContentWidget->findChildren<QWidget *>()) {
+        child->setDisabled(disable);
+    }
+}
+
+void JarPackagerWindow::on_zipAddPathBtn_clicked() {
+    const QString path = ui->zipPathEdit->text().trimmed();
+    if (!path.isEmpty()) {
+        // 检查是否已存在
+        for (int i = 0; i < ui->zipPathsListWidget->count(); ++i) {
+            if (ui->zipPathsListWidget->item(i)->text() == path) {
+                qWarning() << "路径已存在: " << path;
+                return;
+            }
+        }
+        ui->zipPathsListWidget->addItem(path);
+        ui->zipPathEdit->clear();
+        qInfo() << "添加路径: " << path;
+    }
+}
+
+void JarPackagerWindow::on_zipRemovePathBtn_clicked() {
+    const auto selectedItems = ui->zipPathsListWidget->selectedItems();
+    for (auto *item: selectedItems) {
+        qInfo() << "删除路径: " << item->text();
+        delete item;
+    }
+}
+
+void JarPackagerWindow::on_zipClearPathsBtn_clicked() {
+    ui->zipPathsListWidget->clear();
+    qInfo() << "清空路径列表";
+}
+
+void JarPackagerWindow::on_zipBrowseFileBtn_clicked() {
+    const QString jarPath = ui->jarEdit->text().trimmed();
+    QString startDir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+    if (!jarPath.isEmpty()) {
+        startDir = QFileInfo(jarPath).absolutePath();
+    }
+    const QString filePath = QFileDialog::getOpenFileName(this, "选择文件", startDir, "所有文件 (*.*)");
+    if (!filePath.isEmpty()) {
+        ui->zipPathEdit->setText(filePath);
+    }
+}
+
+void JarPackagerWindow::on_zipBrowseDirBtn_clicked() {
+    const QString jarPath = ui->jarEdit->text().trimmed();
+    QString startDir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+    if (!jarPath.isEmpty()) {
+        startDir = QFileInfo(jarPath).absolutePath();
+    }
+    const QString dirPath = QFileDialog::getExistingDirectory(this, "选择目录", startDir);
+    if (!dirPath.isEmpty()) {
+        ui->zipPathEdit->setText(dirPath);
+    }
 }
 
 void JarPackagerWindow::on_actionLoadConfig_triggered() {
@@ -906,6 +1074,12 @@ void JarPackagerWindow::loadPackageConfig(const QString &filePath) {
     ui->showConsoleCheckBox->setChecked(config.showConsole);
     ui->requireAdminCheckBox->setChecked(config.requireAdmin);
     ui->externalExePathEdit->setText(config.externalExePath);
+    // 压缩包设置
+    ui->enableZipCheckBox->setChecked(config.enableZip);
+    ui->zipPathsListWidget->clear();
+    for (const auto &path: config.zipPaths) {
+        ui->zipPathsListWidget->addItem(path);
+    }
 
     currentConfigPath = filePath;
     configChanged = false;
@@ -949,6 +1123,12 @@ void JarPackagerWindow::savePackageConfig(const QString &filePath) {
     config.showConsole = ui->showConsoleCheckBox->isChecked();
     config.requireAdmin = ui->requireAdminCheckBox->isChecked();
     config.externalExePath = ui->externalExePathEdit->text().trimmed();
+    // 压缩包设置
+    config.enableZip = ui->enableZipCheckBox->isChecked();
+    config.zipPaths.clear();
+    for (int i = 0; i < ui->zipPathsListWidget->count(); ++i) {
+        config.zipPaths.append(ui->zipPathsListWidget->item(i)->text());
+    }
 
     QFile file(filePath);
     if (!file.open(QIODevice::WriteOnly)) {

@@ -43,6 +43,8 @@ public:
     bool showConsole = false;
     bool requireAdmin = false;
     QString externalExePath{};
+    bool enableZip = false;
+    QStringList zipPaths{};
 
     [[nodiscard]] QJsonObject toJson() const;
 
@@ -154,6 +156,19 @@ private slots:
     void on_iconBtn_clicked();
 
     void on_modeButtonGroup_idToggled(int id, bool checked);
+
+    // 压缩包设置槽函数
+    void on_enableZipCheckBox_stateChanged(int state);
+
+    void on_zipAddPathBtn_clicked();
+
+    void on_zipRemovePathBtn_clicked();
+
+    void on_zipClearPathsBtn_clicked();
+
+    void on_zipBrowseFileBtn_clicked();
+
+    void on_zipBrowseDirBtn_clicked();
 
     // 菜单动作槽函数
     void on_actionLoadConfig_triggered();
