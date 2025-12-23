@@ -672,6 +672,13 @@ int wmain(int argc, wchar_t *argv[]) {
         }
         std::wstring executablePath = executablePathResult.value();
 
+        // 设置工作目录为 EXE 所在目录，确保双击关联文件和直接启动 EXE 的行为一致
+        std::filesystem::path exeDir = std::filesystem::path(executablePath).parent_path();
+        if (!SetCurrentDirectoryW(exeDir.c_str())) {
+            showError(L"无法设置工作目录到 EXE 所在目录: " + exeDir.wstring());
+            return 1;
+        }
+
         // 提取JAR信息
         uint64_t jarOffset, jarSize, imageSize;
         uint32_t javaVersion;
@@ -700,6 +707,11 @@ int wmain(int argc, wchar_t *argv[]) {
             return 0;
         }
 
+        // 将命令行参数添加到程序参数列表（从第二个参数开始，因为第一个是程序名）
+        // 这样当通过文件关联启动时，被打开的文件路径会传递给 Java 程序
+        for (int i = 1; i < argc; ++i) {
+            programArgs.push_back(argv[i]);
+        }
 
         std::thread t([&] {
             // 检查并提取JAR文件
