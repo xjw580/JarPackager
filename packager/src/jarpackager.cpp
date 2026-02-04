@@ -12,13 +12,16 @@ Description:
 
 #include "jarpackager.h"
 
+#define NOMINMAX
 #include <QBuffer>
 #include <QDir>
+#include <QEvent>
 #include <QImageReader>
 #include <QJsonArray>
 #include <QListWidget>
 #include <QMessageBox>
 #include <QProcess>
+#include <QProgressDialog>
 #include <QtCore/QDateTime>
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonDocument>
@@ -27,11 +30,11 @@ Description:
 #include <QtCore/QStandardPaths>
 #include <QtCore/QThread>
 #include <QtGui/QCloseEvent>
-#include <QProgressDialog>
+#include <ShlObj.h>
+#include <Windows.h>
 #include <attach.h>
 #include <modify.h>
-#include <Windows.h>
-#include <ShlObj.h>
+
 
 #include "jarcommon.h"
 #include "ui_jarpackager.h"
@@ -67,6 +70,16 @@ QJsonObject PackageConfig::toJson() const {
     obj["externalExePath"] = externalExePath;
     obj["enableZip"] = enableZip;
     obj["zipPaths"] = QJsonArray::fromStringList(zipPaths);
+    // 文本位置百分比
+    obj["titlePosX"] = static_cast<double>(titlePosX);
+    obj["titlePosY"] = static_cast<double>(titlePosY);
+    obj["versionPosX"] = static_cast<double>(versionPosX);
+    obj["versionPosY"] = static_cast<double>(versionPosY);
+    obj["statusPosX"] = static_cast<double>(statusPosX);
+    obj["statusPosY"] = static_cast<double>(statusPosY);
+    obj["titleFontSizePercent"] = static_cast<double>(titleFontSizePercent);
+    obj["versionFontSizePercent"] = static_cast<double>(versionFontSizePercent);
+    obj["statusFontSizePercent"] = static_cast<double>(statusFontSizePercent);
     return obj;
 }
 
@@ -105,6 +118,16 @@ void PackageConfig::fromJson(const QJsonObject &obj) {
     for (const auto &value: zipArray) {
         zipPaths.append(value.toString());
     }
+    // 文本位置百分比
+    titlePosX = static_cast<float>(obj.value("titlePosX").toDouble(50.0));
+    titlePosY = static_cast<float>(obj.value("titlePosY").toDouble(33.0));
+    versionPosX = static_cast<float>(obj.value("versionPosX").toDouble(50.0));
+    versionPosY = static_cast<float>(obj.value("versionPosY").toDouble(45.0));
+    statusPosX = static_cast<float>(obj.value("statusPosX").toDouble(5.0));
+    statusPosY = static_cast<float>(obj.value("statusPosY").toDouble(85.0));
+    titleFontSizePercent = static_cast<float>(obj.value("titleFontSizePercent").toDouble(15.0));
+    versionFontSizePercent = static_cast<float>(obj.value("versionFontSizePercent").toDouble(9.0));
+    statusFontSizePercent = static_cast<float>(obj.value("statusFontSizePercent").toDouble(5.5));
 }
 
 QJsonObject SoftConfig::toJson() const {
@@ -113,9 +136,7 @@ QJsonObject SoftConfig::toJson() const {
     return obj;
 }
 
-void SoftConfig::fromJson(const QJsonObject &obj) {
-    lastSoftConfigPath = obj["lastSoftConfigPath"].toString();
-}
+void SoftConfig::fromJson(const QJsonObject &obj) { lastSoftConfigPath = obj["lastSoftConfigPath"].toString(); }
 
 
 // Packager 实现
@@ -207,6 +228,15 @@ std::expected<bool, QString> Packager::packageJar(const Config &config) {
         static_cast<unsigned int>(splashProgramNameBytes.size()),
         static_cast<unsigned int>(splashProgramVersionBytes.size()),
         config.launchMode,
+        config.titlePosX,
+        config.titlePosY,
+        config.versionPosX,
+        config.versionPosY,
+        config.statusPosX,
+        config.statusPosY,
+        config.titleFontSizePercent,
+        config.versionFontSizePercent,
+        config.statusFontSizePercent,
     };
 
     // 写入Footer结构体
@@ -241,8 +271,8 @@ std::expected<bool, QString> Packager::extractJarInfo(const QString &jarPath, Pa
 
     // 计算字符串数据的位置
     const qint64 stringsOffset = fileSize - sizeof(JarCommon::JarFooter) - footer.mainClassLength -
-                                 footer.jvmArgsLength - footer.programArgsLength -
-                                 footer.javaPathLength - footer.jarExtractPathLength;
+                                 footer.jvmArgsLength - footer.programArgsLength - footer.javaPathLength -
+                                 footer.jarExtractPathLength;
 
     file.seek(stringsOffset);
 
@@ -353,10 +383,31 @@ JarPackagerWindow::JarPackagerWindow(QWidget *parent) : QMainWindow(parent), ui(
     ui->javaVersionComboBox->addItems(keys);
     ui->javaVersionComboBox->setCurrentText(keys.last());
 
+    // 连接信号用于实时预览
+    connect(ui->splashImageEdit, &QLineEdit::textChanged, this, &JarPackagerWindow::updateSplashPreview);
+    connect(ui->splashNameEdit, &QLineEdit::textChanged, this, &JarPackagerWindow::updateSplashPreview);
+    connect(ui->splashVersionEdit, &QLineEdit::textChanged, this, &JarPackagerWindow::updateSplashPreview);
+    connect(ui->titlePosXSpinBox, &QSpinBox::valueChanged, this, &JarPackagerWindow::updateSplashPreview);
+    connect(ui->titlePosYSpinBox, &QSpinBox::valueChanged, this, &JarPackagerWindow::updateSplashPreview);
+    connect(ui->versionPosXSpinBox, &QSpinBox::valueChanged, this, &JarPackagerWindow::updateSplashPreview);
+    connect(ui->versionPosYSpinBox, &QSpinBox::valueChanged, this, &JarPackagerWindow::updateSplashPreview);
+    connect(ui->statusPosXSpinBox, &QSpinBox::valueChanged, this, &JarPackagerWindow::updateSplashPreview);
+    connect(ui->statusPosYSpinBox, &QSpinBox::valueChanged, this, &JarPackagerWindow::updateSplashPreview);
+    connect(ui->titleFontSizeSpinBox, &QDoubleSpinBox::valueChanged, this, &JarPackagerWindow::updateSplashPreview);
+    connect(ui->versionFontSizeSpinBox, &QDoubleSpinBox::valueChanged, this, &JarPackagerWindow::updateSplashPreview);
+    connect(ui->statusFontSizeSpinBox, &QDoubleSpinBox::valueChanged, this, &JarPackagerWindow::updateSplashPreview);
+    connect(ui->enablSplashCheckBox, &QCheckBox::stateChanged, this, &JarPackagerWindow::updateSplashPreview);
+
     // 初始化启动页配置
     on_enablSplashCheckBox_stateChanged(ui->enablSplashCheckBox->isChecked() ? Qt::Checked : Qt::Unchecked);
     ui->launchTimeEdit->setValidator(new QIntValidator(0, 999999, ui->launchTimeEdit));
-    ui->splashView->setScene(new QGraphicsScene(this));
+
+    // 初始化预览场景
+    splashScene = new QGraphicsScene(this);
+    ui->splashView->setScene(splashScene);
+    ui->splashView->installEventFilter(this);
+    updateSplashPreview();
+    updateProgramIco();
 
     // 连接文本改变信号，用于标记配置已改变
     // 基本设置
@@ -375,11 +426,20 @@ JarPackagerWindow::JarPackagerWindow(QWidget *parent) : QMainWindow(parent), ui(
     connect(ui->splashImageEdit, &QLineEdit::textChanged, [this]() { configChanged = true; });
     connect(ui->splashNameEdit, &QLineEdit::textChanged, [this]() { configChanged = true; });
     connect(ui->splashVersionEdit, &QLineEdit::textChanged, [this]() { configChanged = true; });
-    connect(ui->splashShowProgressCheckBox, &QCheckBox::checkStateChanged, [this]() { configChanged = true; });
-    connect(ui->splashShowProgresstTextCheckBox, &QCheckBox::checkStateChanged, [this]() { configChanged = true; });
+    connect(ui->splashShowProgressCheckBox, &QCheckBox::checkStateChanged, [this]() {
+        configChanged = true;
+        updateSplashPreview();
+    });
+    connect(ui->splashShowProgresstTextCheckBox, &QCheckBox::checkStateChanged, [this]() {
+        configChanged = true;
+        updateSplashPreview();
+    });
     connect(ui->launchTimeEdit, &QLineEdit::textChanged, [this]() { configChanged = true; });
     // exe设置
-    connect(ui->iconPathEdit, &QLineEdit::textChanged, [this]() { configChanged = true; });
+    connect(ui->iconPathEdit, &QLineEdit::textChanged, [this]() {
+        configChanged = true;
+        updateProgramIco();
+    });
     connect(ui->showConsoleCheckBox, &QCheckBox::checkStateChanged, [this]() { configChanged = true; });
     connect(ui->requireAdminCheckBox, &QCheckBox::checkStateChanged, [this]() { configChanged = true; });
     // 压缩包设置
@@ -410,7 +470,7 @@ JarPackagerWindow::~JarPackagerWindow() {
     delete ui;
 }
 
-void JarPackagerWindow::setupLogging() {
+void JarPackagerWindow::setupLogging() const {
     // 安装自定义消息处理器
     qInstallMessageHandler(messageHandler);
     loggingEnabled = true;
@@ -667,11 +727,26 @@ void JarPackagerWindow::on_packageBtn_clicked() {
     }
 
     auto byte = readAttachRes.value();
+    // 获取文本位置（稍后从 UI 控件中读取，目前使用默认值）
+    const float titlePosX = ui->titlePosXSpinBox ? static_cast<float>(ui->titlePosXSpinBox->value()) : 50.0f;
+    const float titlePosY = ui->titlePosYSpinBox ? static_cast<float>(ui->titlePosYSpinBox->value()) : 33.0f;
+    const float versionPosX = ui->versionPosXSpinBox ? static_cast<float>(ui->versionPosXSpinBox->value()) : 50.0f;
+    const float versionPosY = ui->versionPosYSpinBox ? static_cast<float>(ui->versionPosYSpinBox->value()) : 45.0f;
+    const float statusPosX = ui->statusPosXSpinBox ? static_cast<float>(ui->statusPosXSpinBox->value()) : 5.0f;
+    const float statusPosY = ui->statusPosYSpinBox ? static_cast<float>(ui->statusPosYSpinBox->value()) : 85.0f;
+    const float titleFontSizePercent =
+            ui->titleFontSizeSpinBox ? static_cast<float>(ui->titleFontSizeSpinBox->value()) : 15.0f;
+    const float versionFontSizePercent =
+            ui->versionFontSizeSpinBox ? static_cast<float>(ui->versionFontSizeSpinBox->value()) : 9.0f;
+    const float statusFontSizePercent =
+            ui->statusFontSizeSpinBox ? static_cast<float>(ui->statusFontSizeSpinBox->value()) : 5.5f;
+
     auto configP = std::make_shared<Packager::Config>(
         QByteArray(reinterpret_cast<const char *>(byte.data()), static_cast<int>(byte.size())), jarPath,
         splashImagePath, splashShowProgress, splashShowProgressText, launchTime, version, outputPath, mainClass,
         jvmArgs, progArgs, javaPath, jarExtractPath, splashProgramName, splashProgramVersion, launchMode, iconPath,
-        showConsole, requireAdmin);
+        showConsole, titlePosX, titlePosY, versionPosX, versionPosY, statusPosX, statusPosY, titleFontSizePercent,
+        versionFontSizePercent, statusFontSizePercent, requireAdmin);
     qInfo() << "开始打包...";
 
     auto *dialog = new QProgressDialog("打包中...", QString(), 0, 0, this);
@@ -734,9 +809,8 @@ void JarPackagerWindow::on_packageBtn_clicked() {
 
             QString zipPathEscaped = zipPath;
             zipPathEscaped.replace("'", "''");
-            const QString psCommand = QString(
-                "Compress-Archive -Path %1 -DestinationPath '%2' -Force"
-            ).arg(pathsEscaped.join(","), zipPathEscaped);
+            const QString psCommand = QString("Compress-Archive -Path %1 -DestinationPath '%2' -Force")
+                    .arg(pathsEscaped.join(","), zipPathEscaped);
 
             QProcess psProcess;
             psProcess.start("powershell", QStringList() << "-NoProfile" << "-Command" << psCommand);
@@ -754,35 +828,39 @@ void JarPackagerWindow::on_packageBtn_clicked() {
             }
         }
 
-        QMetaObject::invokeMethod(this, [=, this] {
-            dialog->close();
-            dialog->deleteLater();
+        QMetaObject::invokeMethod(
+            this,
+            [=, this] {
+                dialog->close();
+                dialog->deleteLater();
 
-            if (res) {
-                if (enableZip && !zipError.isEmpty()) {
-                    qWarning() << QString("✗ exe打包成功，但压缩包创建失败: %1").arg(zipError);
-                    updateStatus("打包完成，压缩失败");
-                    QMessageBox::warning(this, "部分成功", QString("exe打包成功，但压缩包创建失败:\n%1").arg(zipError));
-                    if (QMessageBox::question(this, "打包完成", "是否打开输出目录？",
-                                              QMessageBox::Yes | QMessageBox::No) == QMessageBox::Yes) {
-                        openAndSelectFile(configP->outputPath);
+                if (res) {
+                    if (enableZip && !zipError.isEmpty()) {
+                        qWarning() << QString("✗ exe打包成功，但压缩包创建失败: %1").arg(zipError);
+                        updateStatus("打包完成，压缩失败");
+                        QMessageBox::warning(this, "部分成功",
+                                             QString("exe打包成功，但压缩包创建失败:\n%1").arg(zipError));
+                        if (QMessageBox::question(this, "打包完成", "是否打开输出目录？",
+                                                  QMessageBox::Yes | QMessageBox::No) == QMessageBox::Yes) {
+                            openAndSelectFile(configP->outputPath);
+                        }
+                    } else {
+                        qInfo() << "✓ 打包完成!";
+                        qInfo() << QString("输出文件: %1").arg(finalOutputPath);
+                        updateStatus("打包完成");
+
+                        if (QMessageBox::question(this, "打包完成", "是否打开输出目录？",
+                                                  QMessageBox::Yes | QMessageBox::No) == QMessageBox::Yes) {
+                            openAndSelectFile(finalOutputPath);
+                        }
                     }
                 } else {
-                    qInfo() << "✓ 打包完成!";
-                    qInfo() << QString("输出文件: %1").arg(finalOutputPath);
-                    updateStatus("打包完成");
-
-                    if (QMessageBox::question(this, "打包完成", "是否打开输出目录？",
-                                              QMessageBox::Yes | QMessageBox::No) == QMessageBox::Yes) {
-                        openAndSelectFile(finalOutputPath);
-                    }
+                    qWarning() << QString("✗ 打包失败: %1").arg(res.error());
+                    updateStatus("打包失败");
+                    QMessageBox::critical(this, "打包失败", res.error());
                 }
-            } else {
-                qWarning() << QString("✗ 打包失败: %1").arg(res.error());
-                updateStatus("打包失败");
-                QMessageBox::critical(this, "打包失败", res.error());
-            }
-        }, Qt::QueuedConnection);
+            },
+            Qt::QueuedConnection);
     });
     t.detach();
 }
@@ -838,8 +916,8 @@ void JarPackagerWindow::on_attachExeAction_triggered() {
 
 void JarPackagerWindow::resizeEvent(QResizeEvent *event) {
     QWidget::resizeEvent(event);
-    if (ui->splashView->scene())
-        ui->splashView->fitInView(ui->splashView->scene()->sceneRect(), Qt::KeepAspectRatio);
+    if (splashScene)
+        ui->splashView->fitInView(splashScene->sceneRect(), Qt::KeepAspectRatio);
 }
 
 void JarPackagerWindow::on_splashImageBtn_clicked() {
@@ -852,15 +930,7 @@ void JarPackagerWindow::on_splashImageBtn_clicked() {
         this, "选择启动页图片", QStandardPaths::writableLocation(QStandardPaths::PicturesLocation), filter);
     if (!imageFilePath.isEmpty()) {
         ui->splashImageEdit->setText(imageFilePath);
-        const QPixmap pixmap(imageFilePath);
-        if (pixmap.isNull()) {
-            qWarning() << "启动页图片无效, " << imageFilePath;
-            return;
-        }
-        ui->splashView->scene()->clear();
-        ui->splashView->scene()->addPixmap(pixmap);
-        ui->splashView->scene()->setSceneRect(pixmap.rect());
-        ui->splashView->fitInView(ui->splashView->scene()->sceneRect(), Qt::KeepAspectRatio);
+        updateSplashPreview();
     }
 }
 
@@ -870,12 +940,7 @@ void JarPackagerWindow::on_iconBtn_clicked() {
         "图标文件 (*.icon *.ico)");
     if (!iconFilePath.isEmpty()) {
         ui->iconPathEdit->setText(iconFilePath);
-        const QPixmap pixmap(iconFilePath);
-        if (pixmap.isNull()) {
-            qWarning() << "图标无效, " << iconFilePath;
-            return;
-        }
-        ui->iconView->setPixmap(pixmap.scaled(ui->iconView->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+        updateProgramIco();
     }
 }
 
@@ -998,6 +1063,11 @@ void JarPackagerWindow::on_actionAbout_triggered() {
                        "<p>© 2024 JAR Packager Team</p>");
 }
 
+void JarPackagerWindow::on_settingsTab_currentChanged(int index) const {
+    updateSplashPreview();
+    updateProgramIco();
+}
+
 void JarPackagerWindow::closeEvent(QCloseEvent *event) {
     if (configChanged && !currentConfigPath.isEmpty()) {
         if (const int ret = QMessageBox::question(this, "保存配置", "配置已修改，是否保存？",
@@ -1080,6 +1150,16 @@ void JarPackagerWindow::loadPackageConfig(const QString &filePath) {
     for (const auto &path: config.zipPaths) {
         ui->zipPathsListWidget->addItem(path);
     }
+    // 文本位置
+    ui->titlePosXSpinBox->setValue(static_cast<int>(config.titlePosX));
+    ui->titlePosYSpinBox->setValue(static_cast<int>(config.titlePosY));
+    ui->versionPosXSpinBox->setValue(static_cast<int>(config.versionPosX));
+    ui->versionPosYSpinBox->setValue(static_cast<int>(config.versionPosY));
+    ui->statusPosXSpinBox->setValue(static_cast<int>(config.statusPosX));
+    ui->statusPosYSpinBox->setValue(static_cast<int>(config.statusPosY));
+    ui->titleFontSizeSpinBox->setValue(static_cast<double>(config.titleFontSizePercent));
+    ui->versionFontSizeSpinBox->setValue(static_cast<double>(config.versionFontSizePercent));
+    ui->statusFontSizeSpinBox->setValue(static_cast<double>(config.statusFontSizePercent));
 
     currentConfigPath = filePath;
     configChanged = false;
@@ -1115,7 +1195,7 @@ void JarPackagerWindow::savePackageConfig(const QString &filePath) {
     config.splashShowProgress = ui->splashShowProgressCheckBox->isChecked();
     config.splashShowProgressText = ui->splashShowProgresstTextCheckBox->isChecked();
     config.launchTime = ui->launchTimeEdit->text().trimmed().toInt();
-    config.splashShowProgress = ui->splashShowProgressCheckBox->isChecked();
+
     config.splashImagePath = ui->splashImageEdit->text().trimmed();
     config.splashProgramName = ui->splashNameEdit->text().trimmed();
     config.splashProgramVersion = ui->splashVersionEdit->text().trimmed();
@@ -1123,12 +1203,21 @@ void JarPackagerWindow::savePackageConfig(const QString &filePath) {
     config.showConsole = ui->showConsoleCheckBox->isChecked();
     config.requireAdmin = ui->requireAdminCheckBox->isChecked();
     config.externalExePath = ui->externalExePathEdit->text().trimmed();
-    // 压缩包设置
     config.enableZip = ui->enableZipCheckBox->isChecked();
     config.zipPaths.clear();
     for (int i = 0; i < ui->zipPathsListWidget->count(); ++i) {
         config.zipPaths.append(ui->zipPathsListWidget->item(i)->text());
     }
+    // 文本位置
+    config.titlePosX = static_cast<float>(ui->titlePosXSpinBox->value());
+    config.titlePosY = static_cast<float>(ui->titlePosYSpinBox->value());
+    config.versionPosX = static_cast<float>(ui->versionPosXSpinBox->value());
+    config.versionPosY = static_cast<float>(ui->versionPosYSpinBox->value());
+    config.statusPosX = static_cast<float>(ui->statusPosXSpinBox->value());
+    config.statusPosY = static_cast<float>(ui->statusPosYSpinBox->value());
+    config.titleFontSizePercent = static_cast<float>(ui->titleFontSizeSpinBox->value());
+    config.versionFontSizePercent = static_cast<float>(ui->versionFontSizeSpinBox->value());
+    config.statusFontSizePercent = static_cast<float>(ui->statusFontSizeSpinBox->value());
 
     QFile file(filePath);
     if (!file.open(QIODevice::WriteOnly)) {
@@ -1194,4 +1283,192 @@ void JarPackagerWindow::saveSoftConfig(const QString &filePath) {
 
     updateStatus(QString("已保存软件配置: %1").arg(QFileInfo(filePath).baseName()));
     qInfo() << "✓ 软件配置文件保存成功, " << filePath;
+}
+
+static float CalculateOptimalFontSize(const QString &text, const QRectF &targetRect, float maxFontSize, bool bold) {
+    float fontSize = maxFontSize;
+    const float minFontSize = 8.0f;
+    const float step = 2.0f;
+
+    QFont font("Microsoft YaHei");
+    font.setBold(bold);
+
+    while (fontSize > minFontSize) {
+        font.setPixelSize(static_cast<int>(fontSize));
+        QFontMetricsF fm(font);
+
+        if (fm.horizontalAdvance(text) <= targetRect.width() && fm.height() <= targetRect.height()) {
+            break;
+        }
+        fontSize -= step;
+    }
+    return std::max(fontSize, minFontSize);
+}
+
+void JarPackagerWindow::updateSplashPreview() const {
+    if (ui->settingsTab->currentWidget() != ui->splashSettings) return;
+
+    splashScene->clear();
+    if (!ui->enablSplashCheckBox->isChecked()) {
+        ui->splashView->setVisible(false);
+        return;
+    }
+    ui->splashView->setVisible(true);
+
+    const QString imagePath = ui->splashImageEdit->text().trimmed();
+    const QFileInfo fileInfo(imagePath);
+    QPixmap pixmap;
+
+    if (fileInfo.isFile()) {
+        pixmap.load(imagePath);
+        if (pixmap.isNull()) {
+            qWarning() << "启动页图片无效, " << imagePath;
+        } else {
+            QPainter painter(&pixmap);
+            painter.setRenderHint(QPainter::Antialiasing);
+            painter.setRenderHint(QPainter::TextAntialiasing);
+
+            // 获取位置百分比
+            float titleXPer = static_cast<float>(ui->titlePosXSpinBox->value()) / 100.0f;
+            float titleYPer = static_cast<float>(ui->titlePosYSpinBox->value()) / 100.0f;
+            float verXPer = static_cast<float>(ui->versionPosXSpinBox->value()) / 100.0f;
+            float verYPer = static_cast<float>(ui->versionPosYSpinBox->value()) / 100.0f;
+
+            int width = pixmap.width();
+            int height = pixmap.height();
+
+            // 缩放因子：基于270px高度（1080p屏幕的1/4）
+            float scale = static_cast<float>(height) / 270.0f;
+
+            // 绘制标题
+            QString title = ui->splashNameEdit->text();
+            if (!title.isEmpty()) {
+                float textHeight = height * JarCommon::SplashLayout::TitleHeightPercent;
+                float margin = height * JarCommon::SplashLayout::BaseMarginPercent;
+
+                float titleCenterX = width * titleXPer;
+                float titleCenterY = height * titleYPer;
+                float titleWidth = width - 2 * margin; // 保持原有宽度逻辑
+
+                QRectF titleRect(titleCenterX - titleWidth / 2.0f, titleCenterY - textHeight / 2.0f, titleWidth,
+                                 textHeight);
+
+                // 动态计算字体大小
+                float fontSizePercent = static_cast<float>(ui->titleFontSizeSpinBox->value()) / 100.0f;
+                float fontSize = CalculateOptimalFontSize(title, titleRect, height * fontSizePercent, true);
+
+                QFont font("Microsoft YaHei");
+                font.setPixelSize(static_cast<int>(fontSize));
+                font.setBold(true);
+                painter.setFont(font);
+
+                // 阴影
+                painter.setPen(QColor(0, 0, 0, 128));
+                float shadowOffset = fontSize * JarCommon::SplashLayout::ShadowRectOffsetPercent;
+                QRectF shadowRect = titleRect.translated(shadowOffset, shadowOffset);
+                painter.drawText(shadowRect, Qt::AlignCenter, title);
+
+                // 正文
+                painter.setPen(Qt::white);
+                painter.drawText(titleRect, Qt::AlignCenter, title);
+            }
+
+            // 绘制版本
+            QString version = ui->splashVersionEdit->text();
+            if (!version.isEmpty()) {
+                float versionHeight = height * JarCommon::SplashLayout::VersionHeightPercent;
+                float margin = height * JarCommon::SplashLayout::BaseMarginPercent;
+
+                float verCenterX = width * verXPer;
+                float verCenterY = height * verYPer;
+                float verWidth = width - 2 * margin;
+
+                QRectF versionRect(verCenterX - verWidth / 2.0f, verCenterY - versionHeight / 2.0f, verWidth,
+                                   versionHeight);
+
+                float fontSizePercent = static_cast<float>(ui->versionFontSizeSpinBox->value()) / 100.0f;
+                float fontSize = CalculateOptimalFontSize(version, versionRect, height * fontSizePercent, false);
+
+                QFont font("Microsoft YaHei");
+                font.setPixelSize(static_cast<int>(fontSize));
+                painter.setFont(font);
+
+                painter.setPen(QColor(200, 200, 200));
+                painter.drawText(versionRect, Qt::AlignCenter, version);
+            }
+
+            // 绘制进度条
+            if (ui->splashShowProgressCheckBox->isChecked()) {
+                int progressHeight = static_cast<int>(height * JarCommon::SplashLayout::ProgressHeightPercent);
+                QRectF progressRect(0, height - progressHeight, width, progressHeight);
+
+                // 绘制进度条 (50% 模拟进度)
+                float progress = 50.0f;
+                float barWidth = width * progress / 100.0f;
+
+                painter.fillRect(QRectF(0, progressRect.y(), barWidth, progressRect.height()),
+                                 QColor(0, 117, 255)); // 蓝色
+            }
+            // 绘制状态文本
+            if (ui->splashShowProgresstTextCheckBox->isChecked()) {
+                float statusXPer = static_cast<float>(ui->statusPosXSpinBox->value()) / 100.0f;
+                float statusYPer = static_cast<float>(ui->statusPosYSpinBox->value()) / 100.0f;
+                float margin = height * JarCommon::SplashLayout::BaseMarginPercent;
+                // Status Center X, Center Y
+                float statusCenterX = width * statusXPer;
+                float statusCenterY = height * statusYPer;
+                float statusHeight = height * JarCommon::SplashLayout::StatusHeightPercent;
+                float statusWidth = width - 2 * margin;
+
+                QRectF statusRect(statusCenterX - statusWidth / 2.0f, statusCenterY - statusHeight / 2.0f, statusWidth,
+                                  statusHeight);
+
+                QString statusText = "正在加载...  50.00%";
+                float fontSizePercent = static_cast<float>(ui->statusFontSizeSpinBox->value()) / 100.0f;
+                float fontSize = CalculateOptimalFontSize(statusText, statusRect, height * fontSizePercent, false);
+
+                QFont font("Microsoft YaHei");
+                font.setPixelSize(static_cast<int>(fontSize));
+                painter.setFont(font);
+
+                painter.setPen(QColor(180, 180, 180));
+                painter.drawText(statusRect, Qt::AlignCenter, statusText);
+            }
+        }
+    } else {
+        // 如果没有图片，创建一个灰色背景
+        pixmap = QPixmap(200, 100);
+        pixmap.fill(QColor(240, 240, 240));
+        QPainter p(&pixmap);
+        p.setPen(Qt::black);
+        p.drawText(pixmap.rect(), Qt::AlignCenter, "无图片预览");
+    }
+
+
+    splashScene->addPixmap(pixmap);
+    splashScene->setSceneRect(pixmap.rect());
+    ui->splashView->fitInView(splashScene->sceneRect(), Qt::KeepAspectRatio);
+}
+
+void JarPackagerWindow::updateProgramIco() const {
+    if (ui->settingsTab->currentWidget() != ui->exeSettings) return;
+    ui->iconView->clear();
+    const QString icoPath = ui->iconPathEdit->text().trimmed();
+    if (const QFileInfo info(icoPath); info.isFile()) {
+        const QPixmap pixmap(icoPath);
+        if (pixmap.isNull()) {
+            qWarning() << "图标无效, " << icoPath;
+            return;
+        }
+        ui->iconView->setPixmap(pixmap.scaled(ui->iconView->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    }
+}
+
+bool JarPackagerWindow::eventFilter(QObject *watched, QEvent *event) {
+    if (watched == ui->splashView && event->type() == QEvent::Resize) {
+        if (splashScene) {
+            ui->splashView->fitInView(splashScene->sceneRect(), Qt::KeepAspectRatio);
+        }
+    }
+    return QMainWindow::eventFilter(watched, event);
 }

@@ -4,6 +4,7 @@
 #include <vector>
 #include <windows.h>
 #include <gdiplus.h>
+#include "jarcommon.h"
 
 class SplashScreen {
 private:
@@ -35,6 +36,19 @@ private:
     Gdiplus::RectF m_versionRect;
     Gdiplus::RectF m_statusRect;
     Gdiplus::RectF m_progressRect;
+
+    // 文本位置百分比 (0-100)
+    float m_titlePosX;
+    float m_titlePosY;
+    float m_versionPosX;
+    float m_versionPosY;
+    float m_statusPosX;
+    float m_statusPosY;
+
+    // 字体大小百分比
+    float m_titleFontSizePercent;
+    float m_versionFontSizePercent;
+    float m_statusFontSizePercent;
 
     // GDI+相关
     Gdiplus::Bitmap *m_gdiplusBitmap;
@@ -71,7 +85,10 @@ private:
 
 public:
     SplashScreen(const std::vector<char> &pngData, const std::wstring &programName, const std::wstring &programVersion,
-                 bool showProgress = true, bool showProgressText = true);
+                 bool showProgress = true, bool showProgressText = true, float titlePosX = 50.0f,
+                 float titlePosY = 33.0f, float versionPosX = 50.0f, float versionPosY = 45.0f, float statusPosX = 5.0f,
+                 float statusPosY = 85.0f, float titleFontSizePercent = 15.0f, float versionFontSizePercent = 9.0f,
+                 float statusFontSizePercent = 5.5f);
     ~SplashScreen();
 
     // 显示启动遮罩

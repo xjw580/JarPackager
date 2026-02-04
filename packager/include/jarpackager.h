@@ -45,6 +45,18 @@ public:
     QString externalExePath{};
     bool enableZip = false;
     QStringList zipPaths{};
+    // 文本位置百分比 (0-100)
+    float titlePosX = 50.0f;
+    float titlePosY = 33.0f;
+    float versionPosX = 50.0f;
+    float versionPosY = 45.0f;
+    // 进度文本位置百分比 (0-100)
+    float statusPosX = 5.0f;
+    float statusPosY = 85.0f;
+    // 字体大小百分比 (0-100.0) -> 注意这里是UI存储的值，存的时候是percentage value (e.g. 15.0)
+    float titleFontSizePercent = 15.0f;
+    float versionFontSizePercent = 9.0f;
+    float statusFontSizePercent = 5.5f;
 
     [[nodiscard]] QJsonObject toJson() const;
 
@@ -85,6 +97,16 @@ public:
         JarCommon::LaunchMode launchMode;
         QString iconPath;
         bool showConsole;
+        // 文本位置百分比 (0-100)
+        float titlePosX;
+        float titlePosY;
+        float versionPosX;
+        float versionPosY;
+        float statusPosX;
+        float statusPosY;
+        float titleFontSizePercent;
+        float versionFontSizePercent;
+        float statusFontSizePercent;
         bool requireAdmin;
 
         Config(const QByteArray &exeData_, const QString &jarPath_, const QString &splashImagePath_,
@@ -93,17 +115,18 @@ public:
                const QStringList &jvmArgs_, const QStringList &programArgs_, const QString &javaPath_,
                const QString &jarExtractPath_, const QString &splashProgramName_, const QString &splashProgramVersion_,
                const JarCommon::LaunchMode launchMode_, const QString &iconPath_, const bool showConsole_,
-               const bool requireAdmin_) : exeData(exeData_), jarPath(jarPath_), splashImagePath(splashImagePath_),
-                                           splashShowProgress(splashShowProgress_),
-                                           splashShowProgressText(splashShowProgressText_),
-                                           launchTime(launchTime_), javaVersion(javaVersion_), outputPath(outputPath_),
-                                           mainClass(mainClass_),
-                                           jvmArgs(jvmArgs_), programArgs(programArgs_), javaPath(javaPath_),
-                                           jarExtractPath(jarExtractPath_),
-                                           splashProgramName(splashProgramName_),
-                                           splashProgramVersion(splashProgramVersion_), launchMode(launchMode_),
-                                           iconPath(iconPath_), showConsole(showConsole_), requireAdmin(requireAdmin_) {
-        }
+               float titlePosX_, float titlePosY_, float versionPosX_, float versionPosY_, float statusPosX_,
+               float statusPosY_, float titleFontSizePercent_, float versionFontSizePercent_,
+               float statusFontSizePercent_, const bool requireAdmin_) :
+            exeData(exeData_), jarPath(jarPath_), splashImagePath(splashImagePath_),
+            splashShowProgress(splashShowProgress_), splashShowProgressText(splashShowProgressText_),
+            launchTime(launchTime_), javaVersion(javaVersion_), outputPath(outputPath_), mainClass(mainClass_),
+            jvmArgs(jvmArgs_), programArgs(programArgs_), javaPath(javaPath_), jarExtractPath(jarExtractPath_),
+            splashProgramName(splashProgramName_), splashProgramVersion(splashProgramVersion_), launchMode(launchMode_),
+            iconPath(iconPath_), showConsole(showConsole_), titlePosX(titlePosX_), titlePosY(titlePosY_),
+            versionPosX(versionPosX_), versionPosY(versionPosY_), statusPosX(statusPosX_), statusPosY(statusPosY_),
+            titleFontSizePercent(titleFontSizePercent_), versionFontSizePercent(versionFontSizePercent_),
+            statusFontSizePercent(statusFontSizePercent_), requireAdmin(requireAdmin_) {}
     };
 
     static std::expected<bool, QString> packageJar(const Config &config);
@@ -179,6 +202,8 @@ private slots:
 
     void on_actionAbout_triggered();
 
+    void on_settingsTab_currentChanged(int index) const;
+
     // 日志输出槽函数
     void appendLogMessage(const QString &message);
 
@@ -186,6 +211,8 @@ protected:
     void closeEvent(QCloseEvent *event) override;
 
     void resizeEvent(QResizeEvent *event) override;
+
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
     void updateStatus(const QString &message) const;
@@ -198,11 +225,16 @@ private:
 
     void saveSoftConfig(const QString &filePath);
 
-    void setupLogging(); // 设置日志系统
+    void updateSplashPreview() const; // 更新启动页预览
+    
+    void updateProgramIco() const; // 更新启动页预览
+
+    void setupLogging() const; // 设置日志系统
 
 private:
     Ui::JarPackagerWindow *ui;
     QString currentConfigPath;
     bool configChanged = false;
     QMap<int, QRadioButton *> modeMap;
+    class QGraphicsScene *splashScene; // 预览场景
 };

@@ -17,7 +17,7 @@ struct Footer {
 };
 // ZIP End of Central Directory 记录结构
 struct EndOfCentralDirectory {
-    uint32_t signature;          // 0x06054b50
+    uint32_t signature; // 0x06054b50
     uint16_t diskNumber;
     uint16_t centralDirDiskNumber;
     uint16_t recordsOnDisk;
@@ -29,7 +29,7 @@ struct EndOfCentralDirectory {
 #pragma pack(pop)
 
 // 查找 ZIP 文件的 End of Central Directory 记录
-static std::expected<size_t, std::wstring> findEOCD(const std::vector<uint8_t>& data) {
+static std::expected<size_t, std::wstring> findEOCD(const std::vector<uint8_t> &data) {
     const uint32_t EOCD_SIGNATURE = 0x06054b50;
     const size_t MIN_EOCD_SIZE = 22; // EOCD 最小大小
 
@@ -42,18 +42,19 @@ static std::expected<size_t, std::wstring> findEOCD(const std::vector<uint8_t>& 
     size_t searchStart = (data.size() > 65557) ? (data.size() - 65557) : 0;
 
     for (size_t i = data.size() - MIN_EOCD_SIZE; i >= searchStart; --i) {
-        uint32_t sig = *reinterpret_cast<const uint32_t*>(&data[i]);
+        uint32_t sig = *reinterpret_cast<const uint32_t *>(&data[i]);
         if (sig == EOCD_SIGNATURE) {
             // 验证这确实是 EOCD（通过检查注释长度是否正确）
             size_t commentLengthOffset = i + 20;
-            uint16_t commentLength = *reinterpret_cast<const uint16_t*>(&data[commentLengthOffset]);
+            uint16_t commentLength = *reinterpret_cast<const uint16_t *>(&data[commentLengthOffset]);
 
             // EOCD + 注释应该正好到文件末尾
             if (i + MIN_EOCD_SIZE + commentLength == data.size()) {
                 return i;
             }
         }
-        if (i == searchStart) break;
+        if (i == searchStart)
+            break;
     }
 
     return std::unexpected{L"未找到有效的 ZIP 结束标记"};
@@ -162,7 +163,10 @@ extractJarInfo(const std::wstring &filePath, uint64_t &jarOffset, uint64_t &jarS
                bool &splashShowProgress, bool &splashShowProgressText, int &launchTime, uint64_t &timestamp,
                uint32_t &javaVersion, std::wstring &mainClass, std::vector<std::wstring> &jvmArgs,
                std::vector<std::wstring> &programArgs, std::wstring &javaPath, std::wstring &jarExtractPath,
-               std::wstring &splashProgramName, std::wstring &splashProgramVersion, JarCommon::LaunchMode &launchMode) {
+               std::wstring &splashProgramName, std::wstring &splashProgramVersion, JarCommon::LaunchMode &launchMode,
+               float &titlePosX, float &titlePosY, float &versionPosX, float &versionPosY, float &statusPosX,
+               float &statusPosY, float &titleFontSizePercent, float &versionFontSizePercent,
+               float &statusFontSizePercent) {
 
     std::ifstream file(filePath, std::ios::binary);
     if (!file.is_open()) {
@@ -228,6 +232,15 @@ extractJarInfo(const std::wstring &filePath, uint64_t &jarOffset, uint64_t &jarS
     launchTime = footer.launchTime;
     javaVersion = footer.javaVersion;
     launchMode = footer.launchMode;
+    titlePosX = footer.titlePosX;
+    titlePosY = footer.titlePosY;
+    versionPosX = footer.versionPosX;
+    versionPosY = footer.versionPosY;
+    statusPosX = footer.statusPosX;
+    statusPosY = footer.statusPosY;
+    titleFontSizePercent = footer.titleFontSizePercent;
+    versionFontSizePercent = footer.versionFontSizePercent;
+    statusFontSizePercent = footer.statusFontSizePercent;
     timestamp = footer.timestamp;
 
     return true;
@@ -269,7 +282,7 @@ std::expected<bool, std::wstring> extractJarFile(const std::wstring &executableP
     // 先读取 JAR 数据到内存
     inFile.seekg(jarOffset);
     std::vector<uint8_t> jarData(jarSize);
-    inFile.read(reinterpret_cast<char*>(jarData.data()), jarSize);
+    inFile.read(reinterpret_cast<char *>(jarData.data()), jarSize);
     inFile.close();
 
     if (inFile.gcount() != static_cast<std::streamsize>(jarSize)) {
@@ -283,7 +296,7 @@ std::expected<bool, std::wstring> extractJarFile(const std::wstring &executableP
     }
 
     size_t eocdPos = eocdResult.value();
-    EndOfCentralDirectory* eocd = reinterpret_cast<EndOfCentralDirectory*>(&jarData[eocdPos]);
+    EndOfCentralDirectory *eocd = reinterpret_cast<EndOfCentralDirectory *>(&jarData[eocdPos]);
 
     // 更新 EOCD 中的注释长度字段
     uint16_t oldCommentLength = eocd->commentLength;
@@ -298,10 +311,10 @@ std::expected<bool, std::wstring> extractJarFile(const std::wstring &executableP
 
     // 写入 JAR 数据（不包括原有注释）
     size_t jarDataEnd = jarSize - oldCommentLength;
-    outFile.write(reinterpret_cast<const char*>(jarData.data()), jarDataEnd);
+    outFile.write(reinterpret_cast<const char *>(jarData.data()), jarDataEnd);
 
     // 写入时间戳作为新的注释
-    outFile.write(reinterpret_cast<const char*>(&footer), sizeof(Footer));
+    outFile.write(reinterpret_cast<const char *>(&footer), sizeof(Footer));
 
     outFile.close();
     SetFileAttributesW(jarPath.c_str(), FILE_ATTRIBUTE_HIDDEN);
@@ -384,7 +397,7 @@ std::expected<bool, std::wstring> verifyJarFile(const std::wstring &jarPath, con
     inFile.seekg(0, std::ios::beg);
 
     std::vector<uint8_t> fileData(fileSize);
-    inFile.read(reinterpret_cast<char*>(fileData.data()), fileSize);
+    inFile.read(reinterpret_cast<char *>(fileData.data()), fileSize);
     inFile.close();
 
     // 查找 EOCD
@@ -394,7 +407,7 @@ std::expected<bool, std::wstring> verifyJarFile(const std::wstring &jarPath, con
     }
 
     size_t eocdPos = eocdResult.value();
-    EndOfCentralDirectory* eocd = reinterpret_cast<EndOfCentralDirectory*>(&fileData[eocdPos]);
+    EndOfCentralDirectory *eocd = reinterpret_cast<EndOfCentralDirectory *>(&fileData[eocdPos]);
 
     // 检查是否有注释
     if (eocd->commentLength != sizeof(Footer)) {
@@ -403,7 +416,7 @@ std::expected<bool, std::wstring> verifyJarFile(const std::wstring &jarPath, con
 
     // 读取注释区域的时间戳
     size_t commentStart = eocdPos + sizeof(EndOfCentralDirectory);
-    Footer* footer = reinterpret_cast<Footer*>(&fileData[commentStart]);
+    Footer *footer = reinterpret_cast<Footer *>(&fileData[commentStart]);
 
     if (footer->timestamp == timestamp) {
         return true;
@@ -569,10 +582,10 @@ std::wstring parseJavaVersion(const uint32_t javaVersion) {
 void showJarInfo(const std::wstring &mainClass, const uint32_t javaVersion, const uint64_t splashImageSize,
                  const bool splashShowProgress, const bool splashShowProgressText, const int launchTime,
                  const uint64_t timestamp, const std::vector<std::wstring> &jvmArgs,
-                 const std::vector<std::wstring> &programArgs,
-                 const std::wstring &javaPath, const std::wstring &jarExtractPath,
-                 const std::wstring &splashProgramName, const std::wstring &splashProgramVersion,
-                 const JarCommon::LaunchMode launchMode, uint64_t jarOffset, uint64_t jarSize) {
+                 const std::vector<std::wstring> &programArgs, const std::wstring &javaPath,
+                 const std::wstring &jarExtractPath, const std::wstring &splashProgramName,
+                 const std::wstring &splashProgramVersion, const JarCommon::LaunchMode launchMode, uint64_t jarOffset,
+                 uint64_t jarSize) {
     std::wstringstream info;
     info << L"=== JAR 信息 ===\n";
     info << L"JAR 偏移: " << jarOffset << L"\n";
@@ -688,11 +701,15 @@ int wmain(int argc, wchar_t *argv[]) {
         bool splashShowProgress, splashShowProgressText;
         int launchTime;
         uint64_t timestamp;
+        float titlePosX, titlePosY, versionPosX, versionPosY;
+        float statusPosX, statusPosY;
+        float titleFontSizePercent, versionFontSizePercent, statusFontSizePercent;
 
         auto result = extractJarInfo(executablePath, jarOffset, jarSize, imageSize, splashShowProgress,
                                      splashShowProgressText, launchTime, timestamp, javaVersion, mainClass, jvmArgs,
                                      programArgs, javaPath, jarExtractPath, splashProgramName, splashProgramVersion,
-                                     launchMode);
+                                     launchMode, titlePosX, titlePosY, versionPosX, versionPosY, statusPosX, statusPosY,
+                                     titleFontSizePercent, versionFontSizePercent, statusFontSizePercent);
 
         if (!result) {
             showError(result.error());
@@ -803,8 +820,10 @@ int wmain(int argc, wchar_t *argv[]) {
         if (imageSize > 0) {
             if (const auto imageData = loadImageFromExe(executablePath, jarOffset + jarSize, imageSize);
                 !imageData.empty()) {
-                const auto splash = new SplashScreen(imageData, splashProgramName, splashProgramVersion,
-                                                     splashShowProgress, splashShowProgressText);
+                const auto splash = new SplashScreen(
+                        imageData, splashProgramName, splashProgramVersion, splashShowProgress, splashShowProgressText,
+                        titlePosX, titlePosY, versionPosX, versionPosY, statusPosX, statusPosY, titleFontSizePercent,
+                        versionFontSizePercent, statusFontSizePercent);
                 splash->Show();
                 updateSplashProgress(splash, launchTime);
                 splash->Close();

@@ -1,5 +1,3 @@
-#include <QLibraryInfo>
-#include <QTranslator>
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QStyleFactory>
 #include "jarpackager.h"

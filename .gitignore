@@ -7,3 +7,4 @@
 /*.pdb
 /.vs
 configure_file.cmake
+/.claude/

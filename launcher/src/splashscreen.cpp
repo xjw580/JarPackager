@@ -16,23 +16,27 @@ Description: 纯GDI+实现的启动遮罩，支持DPI缩放和自动进度更新
 #include <format>
 #include <vector>
 
-using namespace Gdiplus;
 
 // 静态变量用于GDI+初始化
 static ULONG_PTR g_gdiplusToken = 0;
 static int g_gdiplusRefCount = 0;
 
 SplashScreen::SplashScreen(const std::vector<char> &pngData, const std::wstring &programName,
-                           const std::wstring &programVersion, bool showProgress, bool showProgressText) :
+                           const std::wstring &programVersion, bool showProgress, bool showProgressText,
+                           float titlePosX, float titlePosY, float versionPosX, float versionPosY, float statusPosX,
+                           float statusPosY, float titleFontSizePercent, float versionFontSizePercent,
+                           float statusFontSizePercent) :
     m_hwnd(nullptr), m_width(400), m_height(300), m_programName(programName), m_programVersion(programVersion),
     m_showProgress(showProgress), m_showProgressText(showProgressText), m_statusText(L"正在初始化..."), m_progress(0),
     m_progressHeight(0), m_autoProgress(false), m_progressStep(0.5), m_progressInterval(50), m_autoCloseDelay(0),
+    m_titlePosX(titlePosX), m_titlePosY(titlePosY), m_versionPosX(versionPosX), m_versionPosY(versionPosY),
+    m_statusPosX(statusPosX), m_statusPosY(statusPosY), m_titleFontSizePercent(titleFontSizePercent),
+    m_versionFontSizePercent(versionFontSizePercent), m_statusFontSizePercent(statusFontSizePercent),
     m_gdiplusBitmap(nullptr), m_cachedBitmap(nullptr) {
-
     // 初始化GDI+
     if (g_gdiplusRefCount == 0) {
-        GdiplusStartupInput gdiplusStartupInput;
-        GdiplusStartup(&g_gdiplusToken, &gdiplusStartupInput, nullptr);
+        Gdiplus::GdiplusStartupInput gdiplusStartupInput;
+        Gdiplus::GdiplusStartup(&g_gdiplusToken, &gdiplusStartupInput, nullptr);
     }
     g_gdiplusRefCount++;
 
@@ -79,7 +83,7 @@ SplashScreen::~SplashScreen() {
     // 清理GDI+
     g_gdiplusRefCount--;
     if (g_gdiplusRefCount == 0) {
-        GdiplusShutdown(g_gdiplusToken);
+        Gdiplus::GdiplusShutdown(g_gdiplusToken);
     }
 }
 
@@ -123,10 +127,10 @@ void SplashScreen::CreateBitmapFromPNG(const std::vector<char> &pngData) {
     }
 
     // 创建GDI+位图
-    m_gdiplusBitmap = Bitmap::FromStream(pStream);
+    m_gdiplusBitmap = Gdiplus::Bitmap::FromStream(pStream);
     pStream->Release();
 
-    if (!m_gdiplusBitmap || m_gdiplusBitmap->GetLastStatus() != Ok) {
+    if (!m_gdiplusBitmap || m_gdiplusBitmap->GetLastStatus() != Gdiplus::Ok) {
         CreateDefaultBackground();
         return;
     }
@@ -150,12 +154,13 @@ void SplashScreen::CreateDefaultBackground() {
     m_height = static_cast<int>(200 * GetDPIScale());
 
     // 创建默认渐变背景位图
-    m_gdiplusBitmap = new Bitmap(m_width, m_height, PixelFormat32bppARGB);
-    Graphics g(m_gdiplusBitmap);
+    m_gdiplusBitmap = new Gdiplus::Bitmap(m_width, m_height, PixelFormat32bppARGB);
+    Gdiplus::Graphics g(m_gdiplusBitmap);
 
     // 创建渐变画刷
-    LinearGradientBrush gradientBrush(Point(0, 0), Point(0, m_height), Color(255, 30, 60, 120), // 起始颜色
-                                      Color(255, 90, 150, 255) // 结束颜色
+    Gdiplus::LinearGradientBrush gradientBrush(Gdiplus::Point(0, 0), Gdiplus::Point(0, m_height),
+                                               Gdiplus::Color(255, 30, 60, 120), // 起始颜色
+                                               Gdiplus::Color(255, 90, 150, 255) // 结束颜色
     );
 
     g.FillRectangle(&gradientBrush, 0, 0, m_width, m_height);
@@ -166,56 +171,70 @@ void SplashScreen::CreateCachedBitmap() {
         return;
 
     // 创建缓存位图
-    m_cachedBitmap = new Bitmap(m_width, m_height, PixelFormat32bppARGB);
+    m_cachedBitmap = new Gdiplus::Bitmap(m_width, m_height, PixelFormat32bppARGB);
 
     DrawToCachedBitmap();
 }
 
 void SplashScreen::CalculateLayout() {
-    float dpiScale = GetDPIScale();
-
     // 进度条高度
-    m_progressHeight = static_cast<int>(8 * dpiScale);
-    float margin = 15.0f * dpiScale;
+    m_progressHeight = static_cast<int>(m_height * JarCommon::SplashLayout::ProgressHeightPercent);
+    float margin = m_height * JarCommon::SplashLayout::BaseMarginPercent;
+    float textHeight = m_height * JarCommon::SplashLayout::TitleHeightPercent;
+    float versionHeight = m_height * JarCommon::SplashLayout::VersionHeightPercent;
 
-    // 标题位置（图片区域的上1/3处）
-    m_titleRect = RectF(margin, static_cast<float>(m_height) / 3.0f, static_cast<float>(m_width) - 2 * margin,
-                        50.0f * dpiScale);
+    // 标题位置（使用百分比位置）
+    float titleCenterX = static_cast<float>(m_width) * (m_titlePosX / 100.0f);
+    float titleCenterY = static_cast<float>(m_height) * (m_titlePosY / 100.0f);
+    float titleWidth = static_cast<float>(m_width) - 2 * margin; // 保持原有宽度逻辑，或者可以根据需要调整
 
-    // 版本位置（标题下方）
-    m_versionRect = RectF(margin, m_titleRect.Y + m_titleRect.Height + 10.0f * dpiScale,
-                          static_cast<float>(m_width) - 2 * margin, 30.0f * dpiScale);
+    m_titleRect =
+            Gdiplus::RectF(titleCenterX - titleWidth / 2.0f, titleCenterY - textHeight / 2.0f, titleWidth, textHeight);
+
+    // 版本位置（使用百分比位置）
+    float verCenterX = static_cast<float>(m_width) * (m_versionPosX / 100.0f);
+    float verCenterY = static_cast<float>(m_height) * (m_versionPosY / 100.0f);
+    float verWidth = static_cast<float>(m_width) - 2 * margin;
+
+    m_versionRect =
+            Gdiplus::RectF(verCenterX - verWidth / 2.0f, verCenterY - versionHeight / 2.0f, verWidth, versionHeight);
 
     // 进度条位置（图片底部）
-    m_progressRect = RectF(0, static_cast<float>(m_height - m_progressHeight), static_cast<float>(m_width),
-                           static_cast<float>(m_progressHeight));
+    m_progressRect = Gdiplus::RectF(0, static_cast<float>(m_height - m_progressHeight), static_cast<float>(m_width),
+                                    static_cast<float>(m_progressHeight));
 
-    // 状态文本位置（进度条上方）
-    m_statusRect = RectF(margin, m_progressRect.Y - 35.0f * dpiScale, static_cast<float>(m_width) - 2 * margin,
-                         25.0f * dpiScale);
+    // 状态文本位置（自定义位置）
+    // Status Center X, Center Y
+    float statusCenterX = static_cast<float>(m_width) * (m_statusPosX / 100.0f);
+    float statusCenterY = static_cast<float>(m_height) * (m_statusPosY / 100.0f);
+    float statusHeight = m_height * JarCommon::SplashLayout::StatusHeightPercent;
+    float statusWidth = static_cast<float>(m_width) - 2 * margin;
+
+    m_statusRect = Gdiplus::RectF(statusCenterX - statusWidth / 2.0f, statusCenterY - statusHeight / 2.0f, statusWidth,
+                                  statusHeight);
 }
 
-float SplashScreen::CalculateOptimalFontSize(const Graphics *graphics, const FontFamily *fontFamily,
-                                             const std::wstring &text, const RectF &targetRect, const float maxFontSize,
-                                             const FontStyle fontStyle) {
+float SplashScreen::CalculateOptimalFontSize(const Gdiplus::Graphics *graphics, const Gdiplus::FontFamily *fontFamily,
+                                             const std::wstring &text, const Gdiplus::RectF &targetRect,
+                                             const float maxFontSize, const Gdiplus::FontStyle fontStyle) {
     float fontSize = maxFontSize;
     const float minFontSize = 8.0f;
     const float step = 2.0f;
 
-    StringFormat format;
-    format.SetAlignment(StringAlignmentCenter);
-    format.SetLineAlignment(StringAlignmentCenter);
-    format.SetFormatFlags(StringFormatFlagsNoWrap);
+    Gdiplus::StringFormat format;
+    format.SetAlignment(Gdiplus::StringAlignmentCenter);
+    format.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+    format.SetFormatFlags(Gdiplus::StringFormatFlagsNoWrap);
 
     while (fontSize > minFontSize) {
-        Font font(fontFamily, fontSize, fontStyle, UnitPixel);
-        RectF boundingBox;
+        Gdiplus::Font font(fontFamily, fontSize, fontStyle, Gdiplus::UnitPixel);
+        Gdiplus::RectF boundingBox;
 
         // 测量文本边界
         graphics->MeasureString(text.c_str(), -1, &font, targetRect, &format, &boundingBox);
 
         // 检查是否适合目标矩形（留一些边距）
-        if (boundingBox.Width <= targetRect.Width * 0.95f && boundingBox.Height <= targetRect.Height * 0.95f) {
+        if (boundingBox.Width <= targetRect.Width && boundingBox.Height <= targetRect.Height) {
             break;
         }
 
@@ -229,62 +248,64 @@ void SplashScreen::DrawToCachedBitmap() {
     if (!m_cachedBitmap || !m_gdiplusBitmap)
         return;
 
-    Graphics g(m_cachedBitmap);
-    g.SetSmoothingMode(SmoothingModeAntiAlias);
-    g.SetInterpolationMode(InterpolationModeHighQualityBicubic);
-    g.SetTextRenderingHint(TextRenderingHintAntiAlias);
+    Gdiplus::Graphics g(m_cachedBitmap);
+    g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+    g.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
+    g.SetTextRenderingHint(Gdiplus::TextRenderingHintAntiAlias);
 
     // 清除背景为透明
-    g.Clear(Color(0, 0, 0, 0));
+    g.Clear(Gdiplus::Color(0, 0, 0, 0));
 
     // 绘制背景图片
     g.DrawImage(m_gdiplusBitmap, 0, 0, m_width, m_height);
 
-    float dpiScale = GetDPIScale();
 
     // 绘制标题
     if (!m_programName.empty()) {
-        FontFamily fontFamily(L"Microsoft YaHei");
+        Gdiplus::FontFamily fontFamily(L"Microsoft YaHei");
 
         // 计算合适的标题字体大小
         float titleFontSize =
-                CalculateOptimalFontSize(&g, &fontFamily, m_programName, m_titleRect, 42.0f * dpiScale, FontStyleBold);
+                CalculateOptimalFontSize(&g, &fontFamily, m_programName, m_titleRect,
+                                         m_height * (m_titleFontSizePercent / 100.0f), Gdiplus::FontStyleBold);
 
-        Font titleFont(&fontFamily, titleFontSize, FontStyleBold, UnitPixel);
+        Gdiplus::Font titleFont(&fontFamily, titleFontSize, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
 
         // 阴影
-        SolidBrush shadowBrush(Color(128, 0, 0, 0));
-        StringFormat format;
-        format.SetAlignment(StringAlignmentCenter);
-        format.SetLineAlignment(StringAlignmentCenter);
-        format.SetTrimming(StringTrimmingEllipsisCharacter);
-        format.SetFormatFlags(StringFormatFlagsNoWrap);
+        Gdiplus::SolidBrush shadowBrush(Gdiplus::Color(128, 0, 0, 0));
+        Gdiplus::StringFormat format;
+        format.SetAlignment(Gdiplus::StringAlignmentCenter);
+        format.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+        format.SetTrimming(Gdiplus::StringTrimmingEllipsisCharacter);
+        format.SetFormatFlags(Gdiplus::StringFormatFlagsNoWrap);
 
-        RectF shadowRect = m_titleRect;
-        shadowRect.Offset(2.0f * dpiScale, 2.0f * dpiScale);
+        Gdiplus::RectF shadowRect = m_titleRect;
+        float shadowOffset = titleFontSize * JarCommon::SplashLayout::ShadowRectOffsetPercent;
+        shadowRect.Offset(shadowOffset, shadowOffset);
         g.DrawString(m_programName.c_str(), -1, &titleFont, shadowRect, &format, &shadowBrush);
 
         // 主文本
-        SolidBrush whiteBrush(Color(255, 255, 255, 255));
+        Gdiplus::SolidBrush whiteBrush(Gdiplus::Color(255, 255, 255, 255));
         g.DrawString(m_programName.c_str(), -1, &titleFont, m_titleRect, &format, &whiteBrush);
     }
 
     // 绘制版本
     if (!m_programVersion.empty()) {
-        FontFamily fontFamily(L"Microsoft YaHei");
+        Gdiplus::FontFamily fontFamily(L"Microsoft YaHei");
 
         // 计算合适的版本字体大小
-        float versionFontSize = CalculateOptimalFontSize(&g, &fontFamily, m_programVersion, m_versionRect,
-                                                         24.0f * dpiScale, FontStyleRegular);
+        float versionFontSize =
+                CalculateOptimalFontSize(&g, &fontFamily, m_programVersion, m_versionRect,
+                                         m_height * (m_versionFontSizePercent / 100.0f), Gdiplus::FontStyleRegular);
 
-        Font versionFont(&fontFamily, versionFontSize, FontStyleRegular, UnitPixel);
+        Gdiplus::Font versionFont(&fontFamily, versionFontSize, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
 
-        SolidBrush grayBrush(Color(255, 200, 200, 200));
-        StringFormat format;
-        format.SetAlignment(StringAlignmentCenter);
-        format.SetLineAlignment(StringAlignmentCenter);
-        format.SetTrimming(StringTrimmingEllipsisCharacter);
-        format.SetFormatFlags(StringFormatFlagsNoWrap);
+        Gdiplus::SolidBrush grayBrush(Gdiplus::Color(255, 200, 200, 200));
+        Gdiplus::StringFormat format;
+        format.SetAlignment(Gdiplus::StringAlignmentCenter);
+        format.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+        format.SetTrimming(Gdiplus::StringTrimmingEllipsisCharacter);
+        format.SetFormatFlags(Gdiplus::StringFormatFlagsNoWrap);
 
         g.DrawString(m_programVersion.c_str(), -1, &versionFont, m_versionRect, &format, &grayBrush);
     }
@@ -320,31 +341,31 @@ void SplashScreen::UpdateDisplay() {
         return;
 
     // 创建临时位图用于绘制当前帧
-    Bitmap *tempBitmap = new Bitmap(m_width, m_height, PixelFormat32bppARGB);
-    Graphics g(tempBitmap);
-    g.SetSmoothingMode(SmoothingModeAntiAlias);
-    g.SetTextRenderingHint(TextRenderingHintAntiAlias);
+    auto *tempBitmap = new Gdiplus::Bitmap(m_width, m_height, PixelFormat32bppARGB);
+    Gdiplus::Graphics g(tempBitmap);
+    g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+    g.SetTextRenderingHint(Gdiplus::TextRenderingHintAntiAlias);
 
     // 绘制缓存的背景
     g.DrawImage(m_cachedBitmap, 0, 0);
 
-    float dpiScale = GetDPIScale();
     // 绘制状态文本
-    if (m_showProgressText &&!m_statusText.empty()) {
-        const FontFamily fontFamily(L"Microsoft YaHei");
+    if (m_showProgressText && !m_statusText.empty()) {
+        const Gdiplus::FontFamily fontFamily(L"Microsoft YaHei");
 
         // 计算合适的状态文本字体大小
-        const float statusFontSize = CalculateOptimalFontSize(&g, &fontFamily, m_statusText, m_statusRect,
-                                                              15.0f * dpiScale, FontStyleRegular);
+        const float statusFontSize =
+                CalculateOptimalFontSize(&g, &fontFamily, m_statusText, m_statusRect,
+                                         m_height * (m_statusFontSizePercent / 100.0f), Gdiplus::FontStyleRegular);
 
-        const Font statusFont(&fontFamily, statusFontSize, FontStyleRegular, UnitPixel);
+        const Gdiplus::Font statusFont(&fontFamily, statusFontSize, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
 
-        SolidBrush lightGrayBrush(Color(255, 180, 180, 180));
-        StringFormat format;
-        format.SetAlignment(StringAlignmentNear);
-        format.SetLineAlignment(StringAlignmentCenter);
-        format.SetTrimming(StringTrimmingEllipsisCharacter);
-        format.SetFormatFlags(StringFormatFlagsNoWrap);
+        Gdiplus::SolidBrush lightGrayBrush(Gdiplus::Color(255, 180, 180, 180));
+        Gdiplus::StringFormat format;
+        format.SetAlignment(Gdiplus::StringAlignmentCenter);
+        format.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+        format.SetTrimming(Gdiplus::StringTrimmingEllipsisCharacter);
+        format.SetFormatFlags(Gdiplus::StringFormatFlagsNoWrap);
 
         g.DrawString(m_statusText.c_str(), -1, &statusFont, m_statusRect, &format, &lightGrayBrush);
     }
@@ -352,7 +373,7 @@ void SplashScreen::UpdateDisplay() {
     // 绘制进度条
     if (m_showProgress && m_progress > 0) {
         const float barWidth = static_cast<float>(m_width) * static_cast<float>(m_progress) / 100.0f;
-        SolidBrush barBrush(Color(255, 0, 117, 255)); // 蓝色进度条
+        Gdiplus::SolidBrush barBrush(Gdiplus::Color(255, 0, 117, 255)); // 蓝色进度条
 
         g.FillRectangle(&barBrush, 0.0f, m_progressRect.Y, barWidth, m_progressRect.Height);
     }
@@ -362,8 +383,8 @@ void SplashScreen::UpdateDisplay() {
     HDC hdcMem = CreateCompatibleDC(hdcScreen);
 
     HBITMAP hBitmap = nullptr;
-    tempBitmap->GetHBITMAP(Color(0, 0, 0, 0), &hBitmap);
-    HBITMAP hOldBitmap = (HBITMAP) SelectObject(hdcMem, hBitmap);
+    tempBitmap->GetHBITMAP(Gdiplus::Color(0, 0, 0, 0), &hBitmap);
+    auto hOldBitmap = static_cast<HBITMAP>(SelectObject(hdcMem, hBitmap));
 
     POINT ptSrc = {0, 0};
     SIZE size = {m_width, m_height};
@@ -473,7 +494,7 @@ LRESULT CALLBACK SplashScreen::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, L
                         }
 
                         // 更新状态文本
-                        pThis->m_statusText = std::format(L"正在加载... {:.2f}%", pThis->m_progress);
+                        pThis->m_statusText = std::format(L"正在加载... {:>6.2f}%", pThis->m_progress);
 
                         // 如果达到100%，停止自动进度
                         if (pThis->m_progress >= 100.0) {
