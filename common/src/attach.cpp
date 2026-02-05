@@ -38,11 +38,11 @@ std::expected<Attach::Path, std::wstring> Attach::attachExe(const Path &srcEexPa
             tempPath += L".backup";
 
             std::filesystem::copy_file(exeFilePath, tempPath,
-                                     std::filesystem::copy_options::overwrite_existing, ec);
+                                       std::filesystem::copy_options::overwrite_existing, ec);
             if (ec) {
                 auto msg = ec.message();
                 return std::unexpected(std::format(L"无法创建源文件备份: {}",
-                    std::wstring(msg.begin(), msg.end())));
+                                                   std::wstring(msg.begin(), msg.end())));
             }
 
             // 更新源文件路径为备份路径
@@ -66,7 +66,7 @@ std::expected<Attach::Path, std::wstring> Attach::attachExe(const Path &srcEexPa
     if (!attachDataResult) {
         return std::unexpected(std::format(L"无法读取附加 EXE 文件: {}", attachDataResult.error()));
     }
-    const auto& attachData = attachDataResult.value();
+    const auto &attachData = attachDataResult.value();
 
     // 写入新文件
     auto writeResult = writeAttachedFile(newExeFilePath, srcData, attachData);
@@ -82,13 +82,14 @@ std::expected<Attach::Path, std::wstring> Attach::attachExe(const Path &srcEexPa
 
     return newExeFilePath;
 }
+
 std::expected<Attach::Path, std::wstring> Attach::attachExeToCurrent(const Path &attachExePath) {
     return attachExe(attachExePath, "");
 }
 
-std::expected<Attach::ByteArray, std::wstring> Attach::readAttachedExe(const Path &attachedExePath) {
+std::expected<Attach::ByteArray, std::wstring> Attach::readAttachedExe(const Path &attachedExePath, const bool onlyVerify) {
     std::error_code ec;
-    auto fileSize = std::filesystem::file_size(attachedExePath, ec);
+    const auto fileSize = std::filesystem::file_size(attachedExePath, ec);
     if (ec) {
         return std::unexpected(std::format(L"无法获取文件大小: {}", attachedExePath.wstring()));
     }
@@ -121,6 +122,9 @@ std::expected<Attach::ByteArray, std::wstring> Attach::readAttachedExe(const Pat
         return std::unexpected(L"ExeFooter magic 不匹配");
     }
 
+    if (onlyVerify) {
+        return ByteArray{};
+    }
     // 跳转到附加 EXE 偏移位置
     file.seekg(static_cast<std::streamoff>(footer.exeOffset));
     if (!file) {
@@ -136,8 +140,9 @@ std::expected<Attach::ByteArray, std::wstring> Attach::readAttachedExe(const Pat
 
     return exeData;
 }
-std::expected<Attach::Path, std::wstring> Attach::attachExe(const Path& attachExePath,
-                                                                     const Path& outputPath) {
+
+std::expected<Attach::Path, std::wstring> Attach::attachExe(const Path &attachExePath,
+                                                            const Path &outputPath) {
     // 获取当前程序路径
     auto exePathResult = getCurrentExePath();
     if (!exePathResult) {
@@ -148,17 +153,16 @@ std::expected<Attach::Path, std::wstring> Attach::attachExe(const Path& attachEx
 
 std::expected<Attach::Path, std::wstring> Attach::getCurrentExePath() {
     wchar_t path[MAX_PATH];
-    DWORD result = GetModuleFileNameW(nullptr, path, MAX_PATH);
-    if (result == 0 || result == MAX_PATH) {
+    if (const DWORD result = GetModuleFileNameW(nullptr, path, MAX_PATH); result == 0 || result == MAX_PATH) {
         return std::unexpected(L"无法获取当前程序路径");
     }
     return Path{path};
 }
 
 Attach::Path Attach::generateNewFileName(const Path &originalPath) {
-    auto stem = originalPath.stem().wstring();
-    auto extension = originalPath.extension().wstring();
-    auto parent = originalPath.parent_path();
+    const auto stem = originalPath.stem().wstring();
+    const auto extension = originalPath.extension().wstring();
+    const auto parent = originalPath.parent_path();
 
     return parent / (stem + L"_attached" + extension);
 }

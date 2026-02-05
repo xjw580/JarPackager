@@ -23,16 +23,16 @@ static int g_gdiplusRefCount = 0;
 
 SplashScreen::SplashScreen(const std::vector<char> &pngData, const std::wstring &programName,
                            const std::wstring &programVersion, bool showProgress, bool showProgressText,
-                           float titlePosX, float titlePosY, float versionPosX, float versionPosY, float statusPosX,
-                           float statusPosY, float titleFontSizePercent, float versionFontSizePercent,
+                           float titlePosX, float titlePosY, float versionPosX, float versionPosY,
+                           float statusPosX, float statusPosY, float titleFontSizePercent, float versionFontSizePercent,
                            float statusFontSizePercent) :
     m_hwnd(nullptr), m_width(400), m_height(300), m_programName(programName), m_programVersion(programVersion),
-    m_showProgress(showProgress), m_showProgressText(showProgressText), m_statusText(L"正在初始化..."), m_progress(0),
-    m_progressHeight(0), m_autoProgress(false), m_progressStep(0.5), m_progressInterval(50), m_autoCloseDelay(0),
-    m_titlePosX(titlePosX), m_titlePosY(titlePosY), m_versionPosX(versionPosX), m_versionPosY(versionPosY),
-    m_statusPosX(statusPosX), m_statusPosY(statusPosY), m_titleFontSizePercent(titleFontSizePercent),
-    m_versionFontSizePercent(versionFontSizePercent), m_statusFontSizePercent(statusFontSizePercent),
-    m_gdiplusBitmap(nullptr), m_cachedBitmap(nullptr) {
+    m_showProgress(showProgress), m_showProgressText(showProgressText),
+    m_statusText(L"正在初始化..."), m_progress(0), m_progressHeight(0), m_autoProgress(false), m_progressStep(0.5),
+    m_progressInterval(50), m_autoCloseDelay(0), m_titlePosX(titlePosX), m_titlePosY(titlePosY),
+    m_versionPosX(versionPosX), m_versionPosY(versionPosY), m_statusPosX(statusPosX), m_statusPosY(statusPosY),
+    m_titleFontSizePercent(titleFontSizePercent), m_versionFontSizePercent(versionFontSizePercent),
+    m_statusFontSizePercent(statusFontSizePercent), m_gdiplusBitmap(nullptr), m_cachedBitmap(nullptr) {
     // 初始化GDI+
     if (g_gdiplusRefCount == 0) {
         Gdiplus::GdiplusStartupInput gdiplusStartupInput;
@@ -58,11 +58,21 @@ SplashScreen::SplashScreen(const std::vector<char> &pngData, const std::wstring 
     wc.lpszClassName = className;
 
     RegisterClassExW(&wc);
+
+    // 构建窗口标题: ProgramName Version 或者 默认标题
+    std::wstring windowTitle = L"JarPackagerSplashScreen";
+    if (!m_programName.empty()) {
+        windowTitle = m_programName;
+        // if (!m_programVersion.empty()) {
+        //     windowTitle += L" " + m_programVersion;
+        // }
+    }
+
     // 创建分层窗口
     m_hwnd = CreateWindowExW(
             // WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
-            WS_EX_LAYERED | WS_EX_TOOLWINDOW, className, L"JarPackagerSplashScreen", WS_POPUP, CW_USEDEFAULT,
-            CW_USEDEFAULT, m_width, m_height, nullptr, nullptr, GetModuleHandle(nullptr), this);
+            WS_EX_LAYERED | WS_EX_TOOLWINDOW, className, windowTitle.c_str(), WS_POPUP, CW_USEDEFAULT, CW_USEDEFAULT,
+            m_width, m_height, nullptr, nullptr, GetModuleHandle(nullptr), this);
 
     // 创建缓存位图
     CreateCachedBitmap();
@@ -312,12 +322,13 @@ void SplashScreen::DrawToCachedBitmap() {
 }
 
 void SplashScreen::StartAutoProgress(double stepSize, DWORD intervalMs) {
-    m_autoProgress = true;
     m_progressStep = stepSize;
     m_progressInterval = intervalMs;
+    m_autoProgress = true;
+    m_progress = 0;
 
     if (m_hwnd) {
-        SetTimer(m_hwnd, PROGRESS_TIMER_ID, m_progressInterval, nullptr);
+        SetTimer(m_hwnd, PROGRESS_TIMER_ID, intervalMs, nullptr);
     }
 }
 
@@ -436,7 +447,7 @@ bool SplashScreen::Show() {
     return true;
 }
 
-void SplashScreen::Hide() {
+void SplashScreen::Hide() const {
     if (m_hwnd) {
         ShowWindow(m_hwnd, SW_HIDE);
     }
@@ -464,7 +475,7 @@ void SplashScreen::SetStatusText(const std::wstring &statusText) {
 }
 
 void SplashScreen::UpdateProgress(int progress, const std::wstring *statusText) {
-    m_progress = std::clamp(progress, 0, 100);
+    m_progress = std::clamp(static_cast<double>(progress), 0.0, 100.0);
     if (statusText) {
         m_statusText = *statusText;
     }
@@ -484,7 +495,17 @@ LRESULT CALLBACK SplashScreen::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, L
 
     if (pThis) {
         switch (uMsg) {
+            case WM_PAINT: {
+                PAINTSTRUCT ps;
+                BeginPaint(hwnd, &ps);
+                pThis->UpdateDisplay();
+                EndPaint(hwnd, &ps);
+                return 0;
+            }
+            case WM_ERASEBKGND:
+                return 1;
             case WM_TIMER: {
+                // 如果是自动进度模式下收到定时器消息
                 if (wParam == PROGRESS_TIMER_ID && pThis->m_autoProgress) {
                     // 自动更新进度
                     if (pThis->m_progress < 100.0) {
@@ -496,31 +517,36 @@ LRESULT CALLBACK SplashScreen::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, L
                         // 更新状态文本
                         pThis->m_statusText = std::format(L"正在加载... {:>6.2f}%", pThis->m_progress);
 
-                        // 如果达到100%，停止自动进度
+                        // 如果达到100%，关闭
                         if (pThis->m_progress >= 100.0) {
-                            pThis->StopAutoProgress();
+                            // pThis->StopAutoProgress();
+                            pThis->Close();
                         }
                         InvalidateRect(hwnd, nullptr, FALSE);
                     }
-                } else if (wParam == AUTO_CLOSE_TIMER_ID) {
-                    // 自动关闭
-                    KillTimer(hwnd, AUTO_CLOSE_TIMER_ID);
+                } else if (wParam == AUTO_CLOSE_TIMER_ID && pThis->m_autoCloseDelay > 0) {
                     pThis->Close();
+                }
+                break;
+            }
+            case JarCommon::WM_SPLASH_UPDATE: {
+                // 处理手动更新消息
+                // 一旦收到更新消息，立即停止自动更新
+                pThis->StopAutoProgress();
+
+                // wParam: progress (0-100)
+                int progress = static_cast<int>(wParam);
+
+                // 如果新进度比当前进度小，则忽略（防止回退）
+                if (static_cast<double>(progress) >= pThis->m_progress) {
+                    pThis->UpdateProgress(progress);
                 }
                 return 0;
             }
-            case WM_PAINT: {
-                PAINTSTRUCT ps;
-                BeginPaint(hwnd, &ps);
-                pThis->UpdateDisplay();
-                EndPaint(hwnd, &ps);
-                return 0;
-            }
-            case WM_ERASEBKGND:
-                return 1;
-            case WM_DESTROY:
+            case WM_DESTROY: {
                 PostQuitMessage(0);
-                return 0;
+                break;
+            }
         }
     }
 

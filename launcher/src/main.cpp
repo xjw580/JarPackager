@@ -598,6 +598,10 @@ void showJarInfo(const std::wstring &mainClass, const uint32_t javaVersion, cons
          << L"\n";
     info << L"主类: " << (mainClass.empty() ? L"未指定" : mainClass) << L"\n";
     info << L"Java 路径: " << (javaPath.empty() ? L"未指定" : javaPath) << L"\n";
+    info << L"Splash 图片大小: " << splashImageSize << L" 字节\n";
+    info << L"显示进度条: " << (splashShowProgress ? L"是" : L"否") << L"\n";
+    info << L"显示进度文本: " << (splashShowProgressText ? L"是" : L"否") << L"\n";
+    info << L"启动等待时间: " << launchTime << L" ms\n";
     info << L"Jar解压路径: " << jarExtractPath << L"\n";
     info << L"启动页图片 大小: " << splashImageSize << L" 字节\n";
     info << L"启动页名: " << (splashProgramName.empty() ? L"未指定" : splashProgramName) << L"\n";

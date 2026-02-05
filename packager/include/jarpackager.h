@@ -66,6 +66,11 @@ public:
 class SoftConfig {
 public:
     QString lastSoftConfigPath{};
+    int windowX = -1;
+    int windowY = -1;
+    int windowWidth = -1;
+    int windowHeight = -1;
+    int lastTabIndex = 0;
 
     [[nodiscard]] QJsonObject toJson() const;
 
@@ -210,6 +215,8 @@ private slots:
 protected:
     void closeEvent(QCloseEvent *event) override;
 
+    void showEvent(QShowEvent* event) override;
+
     void resizeEvent(QResizeEvent *event) override;
 
     bool eventFilter(QObject *watched, QEvent *event) override;
@@ -226,7 +233,7 @@ private:
     void saveSoftConfig(const QString &filePath);
 
     void updateSplashPreview() const; // 更新启动页预览
-    
+
     void updateProgramIco() const; // 更新启动页预览
 
     void setupLogging() const; // 设置日志系统

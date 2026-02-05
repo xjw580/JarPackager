@@ -85,17 +85,17 @@ private:
 
 public:
     SplashScreen(const std::vector<char> &pngData, const std::wstring &programName, const std::wstring &programVersion,
-                 bool showProgress = true, bool showProgressText = true, float titlePosX = 50.0f,
-                 float titlePosY = 33.0f, float versionPosX = 50.0f, float versionPosY = 45.0f, float statusPosX = 5.0f,
-                 float statusPosY = 85.0f, float titleFontSizePercent = 15.0f, float versionFontSizePercent = 9.0f,
-                 float statusFontSizePercent = 5.5f);
+                 bool showProgress = true, bool showProgressText = true,
+                 float titlePosX = 50.0f, float titlePosY = 33.0f, float versionPosX = 50.0f, float versionPosY = 45.0f,
+                 float statusPosX = 5.0f, float statusPosY = 85.0f, float titleFontSizePercent = 15.0f,
+                 float versionFontSizePercent = 9.0f, float statusFontSizePercent = 5.5f);
     ~SplashScreen();
 
     // 显示启动遮罩
     bool Show();
 
     // 隐藏启动遮罩
-    void Hide();
+    void Hide() const;
 
     // 关闭启动遮罩
     void Close();

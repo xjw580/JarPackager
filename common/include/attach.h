@@ -30,7 +30,7 @@ public:
     static std::expected<Path, std::wstring> attachExeToCurrent(const Path &attachExePath);
 
     // 从附加的EXE文件中读取附加内容
-    static std::expected<ByteArray, std::wstring> readAttachedExe(const Path &attachedExePath);
+    static std::expected<ByteArray, std::wstring> readAttachedExe(const Path &attachedExePath, bool onlyVerify = false);
 
 private:
     // 获取当前程序路径

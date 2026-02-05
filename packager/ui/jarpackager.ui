@@ -395,6 +395,26 @@
                 </widget>
                </item>
                <item>
+                <widget class="QLabel" name="splashHintLabel">
+                 <property name="toolTip">
+                  <string>可以通过发送 Windows 消息来更新进度条：
+消息ID: WM_USER + 100 (1124)
+wParam: 进度值 (0-100)
+lParam: 0
+
+注意：
+1. 默认自动更新进度。
+2. 一旦收到第一条更新消息，自动更新将立停止，转为完全手动控制。</string>
+                 </property>
+                 <property name="text">
+                  <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-size:9pt; font-style:italic; color:#666666;&quot;&gt;ℹ️ 支持外部程序控制进度 (鼠标悬停查看详情)&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+                 </property>
+                 <property name="wordWrap">
+                  <bool>true</bool>
+                 </property>
+                </widget>
+               </item>
+               <item>
                 <widget class="QWidget" name="splashImageContentWidget" native="true">
                  <property name="maximumSize">
                   <size>

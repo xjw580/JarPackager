@@ -12,6 +12,11 @@ namespace JarCommon {
 
     inline constexpr auto JAVA_EXE_NAME = L"java.exe";
 
+    // 自定义消息：更新进度
+    // wParam: progress (0-100)
+    // lParam: NA
+    inline constexpr unsigned int WM_SPLASH_UPDATE = 0x0400 + 100;
+
     namespace SplashLayout {
         // 百分比常量
         inline constexpr float BaseMarginPercent = 0.055f;

@@ -103,8 +103,8 @@ void PackageConfig::fromJson(const QJsonObject &obj) {
     mainClass = obj.value("mainClass").toString();
     enableSplash = obj.value("enableSplash").toBool(false);
     splashImagePath = obj.value("splashImagePath").toString();
-    splashShowProgress = obj.value("splashShowProgress").toBool();
-    splashShowProgressText = obj.value("splashShowProgressText").toBool();
+    splashShowProgress = obj.value("splashShowProgress").toBool(false);
+    splashShowProgressText = obj.value("splashShowProgressText").toBool(false);
     launchTime = obj.value("launchTime").toString().toInt();
     splashProgramName = obj.value("splashProgramName").toString();
     splashProgramVersion = obj.value("splashProgramVersion").toString();
@@ -133,10 +133,22 @@ void PackageConfig::fromJson(const QJsonObject &obj) {
 QJsonObject SoftConfig::toJson() const {
     QJsonObject obj;
     obj["lastSoftConfigPath"] = lastSoftConfigPath;
+    obj["windowX"] = windowX;
+    obj["windowY"] = windowY;
+    obj["windowWidth"] = windowWidth;
+    obj["windowHeight"] = windowHeight;
+    obj["lastTabIndex"] = lastTabIndex;
     return obj;
 }
 
-void SoftConfig::fromJson(const QJsonObject &obj) { lastSoftConfigPath = obj["lastSoftConfigPath"].toString(); }
+void SoftConfig::fromJson(const QJsonObject &obj) {
+    lastSoftConfigPath = obj["lastSoftConfigPath"].toString();
+    windowX = obj["windowX"].toInt(-1);
+    windowY = obj["windowY"].toInt(-1);
+    windowWidth = obj["windowWidth"].toInt(-1);
+    windowHeight = obj["windowHeight"].toInt(-1);
+    lastTabIndex = obj["lastTabIndex"].toInt(0);
+}
 
 
 // Packager 实现
@@ -211,32 +223,32 @@ std::expected<bool, QString> Packager::packageJar(const Config &config) {
 
     // 创建Footer结构
     const JarCommon::JarFooter footer{
-        JarCommon::JAR_MAGIC,
-        static_cast<unsigned long long>(exeSize),
-        static_cast<unsigned long long>(jarData.size()),
-        static_cast<unsigned long long>(pngData.size()),
-        config.splashShowProgress,
-        config.splashShowProgressText,
-        config.launchTime,
-        static_cast<unsigned long long>(timestamp),
-        config.javaVersion,
-        static_cast<unsigned int>(mainClassBytes.size()),
-        static_cast<unsigned int>(jvmArgsBytes.size()),
-        static_cast<unsigned int>(programArgsBytes.size()),
-        static_cast<unsigned int>(javaPathBytes.size()),
-        static_cast<unsigned int>(jarExtractPathBytes.size()),
-        static_cast<unsigned int>(splashProgramNameBytes.size()),
-        static_cast<unsigned int>(splashProgramVersionBytes.size()),
-        config.launchMode,
-        config.titlePosX,
-        config.titlePosY,
-        config.versionPosX,
-        config.versionPosY,
-        config.statusPosX,
-        config.statusPosY,
-        config.titleFontSizePercent,
-        config.versionFontSizePercent,
-        config.statusFontSizePercent,
+            JarCommon::JAR_MAGIC,
+            static_cast<unsigned long long>(exeSize),
+            static_cast<unsigned long long>(jarData.size()),
+            static_cast<unsigned long long>(pngData.size()),
+            config.splashShowProgress,
+            config.splashShowProgressText,
+            config.launchTime,
+            static_cast<unsigned long long>(timestamp),
+            config.javaVersion,
+            static_cast<unsigned int>(mainClassBytes.size()),
+            static_cast<unsigned int>(jvmArgsBytes.size()),
+            static_cast<unsigned int>(programArgsBytes.size()),
+            static_cast<unsigned int>(javaPathBytes.size()),
+            static_cast<unsigned int>(jarExtractPathBytes.size()),
+            static_cast<unsigned int>(splashProgramNameBytes.size()),
+            static_cast<unsigned int>(splashProgramVersionBytes.size()),
+            config.launchMode,
+            config.titlePosX,
+            config.titlePosY,
+            config.versionPosX,
+            config.versionPosY,
+            config.statusPosX,
+            config.statusPosY,
+            config.titleFontSizePercent,
+            config.versionFontSizePercent,
+            config.statusFontSizePercent,
     };
 
     // 写入Footer结构体
@@ -406,8 +418,6 @@ JarPackagerWindow::JarPackagerWindow(QWidget *parent) : QMainWindow(parent), ui(
     splashScene = new QGraphicsScene(this);
     ui->splashView->setScene(splashScene);
     ui->splashView->installEventFilter(this);
-    updateSplashPreview();
-    updateProgramIco();
 
     // 连接文本改变信号，用于标记配置已改变
     // 基本设置
@@ -706,7 +716,7 @@ void JarPackagerWindow::on_packageBtn_clicked() {
     const QString javaPath = ui->javaPathEdit->text().trimmed();
 
     qInfo() << QString("启动模式: %1")
-            .arg(ui->modeJvm->isChecked() ? ui->modeJvm->text().trimmed() : ui->modeJava->text().trimmed());
+                       .arg(ui->modeJvm->isChecked() ? ui->modeJvm->text().trimmed() : ui->modeJava->text().trimmed());
     if (!jvmArgs.isEmpty()) {
         qInfo() << QString("JVM参数: %1").arg(jvmArgs.join(" "));
     }
@@ -742,11 +752,11 @@ void JarPackagerWindow::on_packageBtn_clicked() {
             ui->statusFontSizeSpinBox ? static_cast<float>(ui->statusFontSizeSpinBox->value()) : 5.5f;
 
     auto configP = std::make_shared<Packager::Config>(
-        QByteArray(reinterpret_cast<const char *>(byte.data()), static_cast<int>(byte.size())), jarPath,
-        splashImagePath, splashShowProgress, splashShowProgressText, launchTime, version, outputPath, mainClass,
-        jvmArgs, progArgs, javaPath, jarExtractPath, splashProgramName, splashProgramVersion, launchMode, iconPath,
-        showConsole, titlePosX, titlePosY, versionPosX, versionPosY, statusPosX, statusPosY, titleFontSizePercent,
-        versionFontSizePercent, statusFontSizePercent, requireAdmin);
+            QByteArray(reinterpret_cast<const char *>(byte.data()), static_cast<int>(byte.size())), jarPath,
+            splashImagePath, splashShowProgress, splashShowProgressText, launchTime, version, outputPath, mainClass,
+            jvmArgs, progArgs, javaPath, jarExtractPath, splashProgramName, splashProgramVersion, launchMode, iconPath,
+            showConsole, titlePosX, titlePosY, versionPosX, versionPosY, statusPosX, statusPosY, titleFontSizePercent,
+            versionFontSizePercent, statusFontSizePercent, requireAdmin);
     qInfo() << "开始打包...";
 
     auto *dialog = new QProgressDialog("打包中...", QString(), 0, 0, this);
@@ -810,7 +820,7 @@ void JarPackagerWindow::on_packageBtn_clicked() {
             QString zipPathEscaped = zipPath;
             zipPathEscaped.replace("'", "''");
             const QString psCommand = QString("Compress-Archive -Path %1 -DestinationPath '%2' -Force")
-                    .arg(pathsEscaped.join(","), zipPathEscaped);
+                                              .arg(pathsEscaped.join(","), zipPathEscaped);
 
             QProcess psProcess;
             psProcess.start("powershell", QStringList() << "-NoProfile" << "-Command" << psCommand);
@@ -829,46 +839,46 @@ void JarPackagerWindow::on_packageBtn_clicked() {
         }
 
         QMetaObject::invokeMethod(
-            this,
-            [=, this] {
-                dialog->close();
-                dialog->deleteLater();
+                this,
+                [=, this] {
+                    dialog->close();
+                    dialog->deleteLater();
 
-                if (res) {
-                    if (enableZip && !zipError.isEmpty()) {
-                        qWarning() << QString("✗ exe打包成功，但压缩包创建失败: %1").arg(zipError);
-                        updateStatus("打包完成，压缩失败");
-                        QMessageBox::warning(this, "部分成功",
-                                             QString("exe打包成功，但压缩包创建失败:\n%1").arg(zipError));
-                        if (QMessageBox::question(this, "打包完成", "是否打开输出目录？",
-                                                  QMessageBox::Yes | QMessageBox::No) == QMessageBox::Yes) {
-                            openAndSelectFile(configP->outputPath);
+                    if (res) {
+                        if (enableZip && !zipError.isEmpty()) {
+                            qWarning() << QString("✗ exe打包成功，但压缩包创建失败: %1").arg(zipError);
+                            updateStatus("打包完成，压缩失败");
+                            QMessageBox::warning(this, "部分成功",
+                                                 QString("exe打包成功，但压缩包创建失败:\n%1").arg(zipError));
+                            if (QMessageBox::question(this, "打包完成", "是否打开输出目录？",
+                                                      QMessageBox::Yes | QMessageBox::No) == QMessageBox::Yes) {
+                                openAndSelectFile(configP->outputPath);
+                            }
+                        } else {
+                            qInfo() << "✓ 打包完成!";
+                            qInfo() << QString("输出文件: %1").arg(finalOutputPath);
+                            updateStatus("打包完成");
+
+                            if (QMessageBox::question(this, "打包完成", "是否打开输出目录？",
+                                                      QMessageBox::Yes | QMessageBox::No) == QMessageBox::Yes) {
+                                openAndSelectFile(finalOutputPath);
+                            }
                         }
                     } else {
-                        qInfo() << "✓ 打包完成!";
-                        qInfo() << QString("输出文件: %1").arg(finalOutputPath);
-                        updateStatus("打包完成");
-
-                        if (QMessageBox::question(this, "打包完成", "是否打开输出目录？",
-                                                  QMessageBox::Yes | QMessageBox::No) == QMessageBox::Yes) {
-                            openAndSelectFile(finalOutputPath);
-                        }
+                        qWarning() << QString("✗ 打包失败: %1").arg(res.error());
+                        updateStatus("打包失败");
+                        QMessageBox::critical(this, "打包失败", res.error());
                     }
-                } else {
-                    qWarning() << QString("✗ 打包失败: %1").arg(res.error());
-                    updateStatus("打包失败");
-                    QMessageBox::critical(this, "打包失败", res.error());
-                }
-            },
-            Qt::QueuedConnection);
+                },
+                Qt::QueuedConnection);
     });
     t.detach();
 }
 
 void JarPackagerWindow::on_loadExeBtn_clicked() {
     const QString exePath = QFileDialog::getOpenFileName(
-        this, "选择EXE文件", QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation),
-        "可执行文件 (*.exe)");
+            this, "选择EXE文件", QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation),
+            "可执行文件 (*.exe)");
     if (!exePath.isEmpty()) {
         ui->externalExePathEdit->setText(exePath);
     }
@@ -894,6 +904,15 @@ void JarPackagerWindow::on_modifyExeBtn_clicked() {
 }
 
 void JarPackagerWindow::on_attachExeAction_triggered() {
+    const auto currentExePath = QCoreApplication::applicationFilePath().toStdWString();
+    if (const auto readRes = Attach::readAttachedExe(currentExePath, true); readRes) {
+        const int ret = QMessageBox::warning(
+                this, "警告", "当前程序已经包含了一个附加的EXE。\n继续操作将覆盖原有附加程序。\n是否继续？",
+                QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (ret == QMessageBox::No) {
+            return;
+        }
+    }
     if (const QString attachExePath = QFileDialog::getOpenFileName(this, "选择EXE文件", "", "可执行文件 (*.exe)");
         !attachExePath.isEmpty()) {
         if (const auto res = Attach::attachExeToCurrent(std::filesystem::path(attachExePath.toStdWString())); res) {
@@ -927,7 +946,7 @@ void JarPackagerWindow::on_splashImageBtn_clicked() {
 
     const QString filter = "图片文件 (" + formats.join(" ") + ")";
     const QString imageFilePath = QFileDialog::getOpenFileName(
-        this, "选择启动页图片", QStandardPaths::writableLocation(QStandardPaths::PicturesLocation), filter);
+            this, "选择启动页图片", QStandardPaths::writableLocation(QStandardPaths::PicturesLocation), filter);
     if (!imageFilePath.isEmpty()) {
         ui->splashImageEdit->setText(imageFilePath);
         updateSplashPreview();
@@ -936,8 +955,8 @@ void JarPackagerWindow::on_splashImageBtn_clicked() {
 
 void JarPackagerWindow::on_iconBtn_clicked() {
     const QString iconFilePath = QFileDialog::getOpenFileName(
-        this, "选择图标文件", QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation),
-        "图标文件 (*.icon *.ico)");
+            this, "选择图标文件", QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation),
+            "图标文件 (*.icon *.ico)");
     if (!iconFilePath.isEmpty()) {
         ui->iconPathEdit->setText(iconFilePath);
         updateProgramIco();
@@ -1017,8 +1036,8 @@ void JarPackagerWindow::on_zipBrowseDirBtn_clicked() {
 
 void JarPackagerWindow::on_actionLoadConfig_triggered() {
     const QString fileName = QFileDialog::getOpenFileName(
-        this, "选择配置文件", QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation),
-        "JSON配置 (*.json)");
+            this, "选择配置文件", QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation),
+            "JSON配置 (*.json)");
     if (!fileName.isEmpty()) {
         loadPackageConfig(fileName);
         saveSoftConfig(QDir::current().filePath(softConfigName));
@@ -1030,7 +1049,7 @@ void JarPackagerWindow::on_actionSaveConfig_triggered() {
     if (currentConfigPath.isEmpty()) {
         fileName = QFileDialog::getSaveFileName(this, "保存配置文件",
                                                 QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) +
-                                                "/jarpackager_config.json",
+                                                        "/jarpackager_config.json",
                                                 "JSON配置 (*.json)");
     } else {
         fileName = currentConfigPath;
@@ -1069,12 +1088,12 @@ void JarPackagerWindow::on_settingsTab_currentChanged(int index) const {
 }
 
 void JarPackagerWindow::closeEvent(QCloseEvent *event) {
+    saveSoftConfig(QDir::current().filePath(softConfigName));
     if (configChanged && !currentConfigPath.isEmpty()) {
         if (const int ret = QMessageBox::question(this, "保存配置", "配置已修改，是否保存？",
                                                   QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
             ret == QMessageBox::Save) {
             savePackageConfig(currentConfigPath);
-            saveSoftConfig(QDir::current().filePath(softConfigName));
             event->accept();
         } else if (ret == QMessageBox::Discard) {
             qInfo() << "用户选择不保存配置，直接退出";
@@ -1085,6 +1104,12 @@ void JarPackagerWindow::closeEvent(QCloseEvent *event) {
     } else {
         event->accept();
     }
+}
+
+void JarPackagerWindow::showEvent(QShowEvent *event) {
+    QMainWindow::showEvent(event);
+    updateSplashPreview();
+    updateProgramIco();
 }
 
 void JarPackagerWindow::updateStatus(const QString &message) const { ui->statusbar->showMessage(message); }
@@ -1182,9 +1207,8 @@ void JarPackagerWindow::savePackageConfig(const QString &filePath) {
     }
     config.javaPath = ui->javaPathEdit->text().trimmed();
     config.jarExtractPath = ui->jarExtractPathEdit->text().trimmed();
-    config.launchMode = static_cast<int>(ui->modeJvm->isChecked()
-                                             ? JarCommon::LaunchMode::DirectJVM
-                                             : JarCommon::LaunchMode::JavaExe);
+    config.launchMode = static_cast<int>(ui->modeJvm->isChecked() ? JarCommon::LaunchMode::DirectJVM
+                                                                  : JarCommon::LaunchMode::JavaExe);
     if (const auto &javaVersion = ui->javaVersionComboBox->currentText(); !javaVersion.isEmpty()) {
         if (const std::string &ver = javaVersion.toStdString(); JarCommon::JAVA_VERSION_MAP.contains(ver)) {
             config.javaVersion = JarCommon::JAVA_VERSION_MAP.at(ver);
@@ -1262,6 +1286,18 @@ void JarPackagerWindow::loadSoftConfig(const QString &filePath) {
     SoftConfig config{};
     config.fromJson(doc.object());
     currentConfigPath = config.lastSoftConfigPath;
+    ui->outEdit->setText(config.lastSoftConfigPath); // 仅恢复显示，不自动加载（逻辑在构造函数已处理）
+
+    // 恢复窗口状态
+    if (config.windowWidth > 0 && config.windowHeight > 0) {
+        resize(config.windowWidth, config.windowHeight);
+    }
+    if (config.windowX != -1 && config.windowY != -1) {
+        move(config.windowX, config.windowY);
+    }
+    if (config.lastTabIndex >= 0 && config.lastTabIndex < ui->settingsTab->count()) {
+        ui->settingsTab->setCurrentIndex(config.lastTabIndex);
+    }
 }
 
 void JarPackagerWindow::saveSoftConfig(const QString &filePath) {
@@ -1276,6 +1312,12 @@ void JarPackagerWindow::saveSoftConfig(const QString &filePath) {
     }
 
     config.lastSoftConfigPath = currentConfigPath;
+    config.lastTabIndex = ui->settingsTab->currentIndex();
+    config.windowWidth = width();
+    config.windowHeight = height();
+    const QPoint pos = frameGeometry().topLeft();
+    config.windowX = pos.x();
+    config.windowY = pos.y();
 
     const QJsonDocument doc(config.toJson());
     file.write(doc.toJson());
@@ -1306,7 +1348,8 @@ static float CalculateOptimalFontSize(const QString &text, const QRectF &targetR
 }
 
 void JarPackagerWindow::updateSplashPreview() const {
-    if (ui->settingsTab->currentWidget() != ui->splashSettings) return;
+    if (ui->settingsTab->currentWidget() != ui->splashSettings)
+        return;
 
     splashScene->clear();
     if (!ui->enablSplashCheckBox->isChecked()) {
@@ -1451,7 +1494,8 @@ void JarPackagerWindow::updateSplashPreview() const {
 }
 
 void JarPackagerWindow::updateProgramIco() const {
-    if (ui->settingsTab->currentWidget() != ui->exeSettings) return;
+    if (ui->settingsTab->currentWidget() != ui->exeSettings)
+        return;
     ui->iconView->clear();
     const QString icoPath = ui->iconPathEdit->text().trimmed();
     if (const QFileInfo info(icoPath); info.isFile()) {
