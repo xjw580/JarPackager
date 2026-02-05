@@ -23,16 +23,16 @@ static int g_gdiplusRefCount = 0;
 
 SplashScreen::SplashScreen(const std::vector<char> &pngData, const std::wstring &programName,
                            const std::wstring &programVersion, bool showProgress, bool showProgressText,
-                           float titlePosX, float titlePosY, float versionPosX, float versionPosY,
-                           float statusPosX, float statusPosY, float titleFontSizePercent, float versionFontSizePercent,
+                           float titlePosX, float titlePosY, float versionPosX, float versionPosY, float statusPosX,
+                           float statusPosY, float titleFontSizePercent, float versionFontSizePercent,
                            float statusFontSizePercent) :
     m_hwnd(nullptr), m_width(400), m_height(300), m_programName(programName), m_programVersion(programVersion),
-    m_showProgress(showProgress), m_showProgressText(showProgressText),
-    m_statusText(L"正在初始化..."), m_progress(0), m_progressHeight(0), m_autoProgress(false), m_progressStep(0.5),
-    m_progressInterval(50), m_autoCloseDelay(0), m_titlePosX(titlePosX), m_titlePosY(titlePosY),
-    m_versionPosX(versionPosX), m_versionPosY(versionPosY), m_statusPosX(statusPosX), m_statusPosY(statusPosY),
-    m_titleFontSizePercent(titleFontSizePercent), m_versionFontSizePercent(versionFontSizePercent),
-    m_statusFontSizePercent(statusFontSizePercent), m_gdiplusBitmap(nullptr), m_cachedBitmap(nullptr) {
+    m_showProgress(showProgress), m_showProgressText(showProgressText), m_statusText(L"正在初始化..."), m_progress(0),
+    m_progressHeight(0), m_autoProgress(false), m_progressStep(0.5), m_progressInterval(50), m_autoCloseDelay(0),
+    m_titlePosX(titlePosX), m_titlePosY(titlePosY), m_versionPosX(versionPosX), m_versionPosY(versionPosY),
+    m_statusPosX(statusPosX), m_statusPosY(statusPosY), m_titleFontSizePercent(titleFontSizePercent),
+    m_versionFontSizePercent(versionFontSizePercent), m_statusFontSizePercent(statusFontSizePercent),
+    m_gdiplusBitmap(nullptr), m_cachedBitmap(nullptr) {
     // 初始化GDI+
     if (g_gdiplusRefCount == 0) {
         Gdiplus::GdiplusStartupInput gdiplusStartupInput;
@@ -539,7 +539,9 @@ LRESULT CALLBACK SplashScreen::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, L
 
                 // 如果新进度比当前进度小，则忽略（防止回退）
                 if (static_cast<double>(progress) >= pThis->m_progress) {
-                    pThis->UpdateProgress(progress);
+                    // 格式化状态文本 "正在加载...  50.00%"
+                    std::wstring statusText = std::format(L"正在加载... {:>6.2f}%", static_cast<double>(progress));
+                    pThis->UpdateProgress(progress, &statusText);
                 }
                 return 0;
             }
