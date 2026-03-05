@@ -171,6 +171,8 @@ private slots:
 
     void on_saveConfigBtn_clicked();
 
+    void on_saveConfigAsBtn_clicked();
+
     void on_packageBtn_clicked();
 
     void on_loadExeBtn_clicked();
@@ -202,6 +204,8 @@ private slots:
     void on_actionLoadConfig_triggered();
 
     void on_actionSaveConfig_triggered();
+
+    void on_actionSaveConfigAs_triggered();
 
     void on_actionExit_triggered();
 

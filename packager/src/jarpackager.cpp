@@ -414,6 +414,12 @@ JarPackagerWindow::JarPackagerWindow(QWidget *parent) : QMainWindow(parent), ui(
     on_enablSplashCheckBox_stateChanged(ui->enablSplashCheckBox->isChecked() ? Qt::Checked : Qt::Unchecked);
     ui->launchTimeEdit->setValidator(new QIntValidator(0, 999999, ui->launchTimeEdit));
 
+    // 为菜单动作添加快捷键
+    ui->actionLoadConfig->setShortcut(QKeySequence::Open);
+    ui->actionSaveConfig->setShortcut(QKeySequence::Save);
+    ui->actionSaveConfigAs->setShortcut(QKeySequence::SaveAs);
+    ui->actionExit->setShortcut(QKeySequence::Quit);
+
     // 初始化预览场景
     splashScene = new QGraphicsScene(this);
     ui->splashView->setScene(splashScene);
@@ -635,6 +641,8 @@ void JarPackagerWindow::on_javaPathBtn_clicked() {
 void JarPackagerWindow::on_loadConfigBtn_clicked() { on_actionLoadConfig_triggered(); }
 
 void JarPackagerWindow::on_saveConfigBtn_clicked() { on_actionSaveConfig_triggered(); }
+
+void JarPackagerWindow::on_saveConfigAsBtn_clicked() { on_actionSaveConfigAs_triggered(); }
 
 void JarPackagerWindow::on_packageBtn_clicked() {
     const QString jarPath = ui->jarEdit->text().trimmed();
@@ -1054,6 +1062,19 @@ void JarPackagerWindow::on_actionSaveConfig_triggered() {
     } else {
         fileName = currentConfigPath;
     }
+
+    if (!fileName.isEmpty()) {
+        savePackageConfig(fileName);
+        saveSoftConfig(QDir::current().filePath(softConfigName));
+    }
+}
+
+void JarPackagerWindow::on_actionSaveConfigAs_triggered() {
+    QString fileName = QFileDialog::getSaveFileName(this, "另存为配置文件",
+                                                    currentConfigPath.isEmpty() ?
+                                                    QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) + "/jarpackager_config.json" :
+                                                    currentConfigPath,
+                                                    "JSON配置 (*.json)");
 
     if (!fileName.isEmpty()) {
         savePackageConfig(fileName);

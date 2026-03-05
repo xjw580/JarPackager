@@ -1165,6 +1165,13 @@ lParam: 0
            </widget>
           </item>
           <item>
+           <widget class="QPushButton" name="saveConfigAsBtn">
+            <property name="text">
+             <string>另存为...</string>
+            </property>
+           </widget>
+          </item>
+          <item>
            <widget class="QPushButton" name="packageBtn">
             <property name="text">
              <string>打包</string>
@@ -1224,12 +1231,23 @@ lParam: 0
      <height>33</height>
     </rect>
    </property>
+   <widget class="QMenu" name="menuFile">
+    <property name="title">
+     <string>文件</string>
+    </property>
+    <addaction name="actionLoadConfig"/>
+    <addaction name="actionSaveConfig"/>
+    <addaction name="actionSaveConfigAs"/>
+    <addaction name="separator"/>
+    <addaction name="actionExit"/>
+   </widget>
    <widget class="QMenu" name="menu">
     <property name="title">
      <string>工具</string>
     </property>
     <addaction name="attachExeAction"/>
    </widget>
+   <addaction name="menuFile"/>
    <addaction name="menu"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
@@ -1241,6 +1259,26 @@ lParam: 0
   <action name="attachExeAction">
    <property name="text">
     <string>附加启动exe</string>
+   </property>
+  </action>
+  <action name="actionLoadConfig">
+   <property name="text">
+    <string>加载配置</string>
+   </property>
+  </action>
+  <action name="actionSaveConfig">
+   <property name="text">
+    <string>保存配置</string>
+   </property>
+  </action>
+  <action name="actionSaveConfigAs">
+   <property name="text">
+    <string>另存为...</string>
+   </property>
+  </action>
+  <action name="actionExit">
+   <property name="text">
+    <string>退出</string>
    </property>
   </action>
  </widget>
