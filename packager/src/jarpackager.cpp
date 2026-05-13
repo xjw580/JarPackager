@@ -1210,7 +1210,7 @@ void JarPackagerWindow::loadPackageConfig(const QString &filePath) {
     currentConfigPath = filePath;
     configChanged = false;
     updateStatus(QString("已加载打包配置: %1").arg(QFileInfo(filePath).baseName()));
-    qInfo() << "已打包加载配置, " << filePath;
+    qInfo() << "已加载打包配置, " << filePath;
 }
 
 void JarPackagerWindow::savePackageConfig(const QString &filePath) {

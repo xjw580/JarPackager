@@ -8,6 +8,7 @@
 #include <windows.h>
 #include "jarcommon.h"
 #include "splashscreen.h"
+#include <versionhelpers.h>
 
 import std;
 
@@ -15,6 +16,7 @@ import std;
 struct Footer {
     uint64_t timestamp;
 };
+
 // ZIP End of Central Directory 记录结构
 struct EndOfCentralDirectory {
     uint32_t signature; // 0x06054b50
@@ -62,11 +64,11 @@ static std::expected<size_t, std::wstring> findEOCD(const std::vector<uint8_t> &
 
 // UTF-8和宽字符转换辅助函数
 std::string wstringToUtf8(const std::wstring &wstr) {
-    return std::wstring_convert<std::codecvt_utf8<wchar_t>>().to_bytes(wstr);
+    return std::wstring_convert<std::codecvt_utf8<wchar_t> >().to_bytes(wstr);
 }
 
 std::wstring utf8ToWstring(const std::string &utf8) {
-    return std::wstring_convert<std::codecvt_utf8<wchar_t>>().from_bytes(utf8);
+    return std::wstring_convert<std::codecvt_utf8<wchar_t> >().from_bytes(utf8);
 }
 
 // 辅助函数：分割宽字符串
@@ -110,8 +112,9 @@ std::expected<std::wstring, std::wstring> findJavaPath() {
 
     // 检查常见安装路径
     std::vector<std::wstring> searchPaths = {
-            L"C:\\Program Files\\Java", L"C:\\Program Files (x86)\\Java", L"C:\\Program Files\\Eclipse Adoptium",
-            L"C:\\Program Files\\Amazon Corretto", L"C:\\Program Files\\Microsoft\\jdk"};
+        L"C:\\Program Files\\Java", L"C:\\Program Files (x86)\\Java", L"C:\\Program Files\\Eclipse Adoptium",
+        L"C:\\Program Files\\Amazon Corretto", L"C:\\Program Files\\Microsoft\\jdk"
+    };
 
     for (const auto &basePath: searchPaths) {
         if (std::filesystem::exists(basePath)) {
@@ -132,9 +135,11 @@ std::expected<std::wstring, std::wstring> findJavaPath() {
 // 查找JVM.dll路径
 std::expected<std::wstring, std::wstring> findJvmPath() {
     // 检查常见JVM路径
-    std::vector<std::wstring> searchPaths = {L"C:\\Program Files\\Java", L"C:\\Program Files (x86)\\Java",
-                                             L"C:\\Program Files\\Eclipse Adoptium",
-                                             L"C:\\Program Files\\Amazon Corretto"};
+    std::vector<std::wstring> searchPaths = {
+        L"C:\\Program Files\\Java", L"C:\\Program Files (x86)\\Java",
+        L"C:\\Program Files\\Eclipse Adoptium",
+        L"C:\\Program Files\\Amazon Corretto"
+    };
 
     for (const auto &basePath: searchPaths) {
         if (std::filesystem::exists(basePath)) {
@@ -167,7 +172,6 @@ extractJarInfo(const std::wstring &filePath, uint64_t &jarOffset, uint64_t &jarS
                float &titlePosX, float &titlePosY, float &versionPosX, float &versionPosY, float &statusPosX,
                float &statusPosY, float &titleFontSizePercent, float &versionFontSizePercent,
                float &statusFontSizePercent) {
-
     std::ifstream file(filePath, std::ios::binary);
     if (!file.is_open()) {
         return std::unexpected{L"无法打开文件: " + filePath};
@@ -366,7 +370,6 @@ std::expected<std::wstring, std::wstring> calculateFileMD5(const std::filesystem
         file.close();
 
         return calculateMD5(buffer);
-
     } catch (const std::exception &e) {
         return std::unexpected{L"计算MD5时发生异常: " + utf8ToWstring(e.what())};
     }
@@ -468,7 +471,7 @@ std::expected<bool, std::wstring> launchWithJvmDll(const std::wstring &jvmPath, 
         return std::unexpected{L"无法加载JVM动态库"};
     }
 
-    typedef jint(JNICALL * CreateJavaVM_t)(JavaVM * *pvm, void **penv, void *args);
+    typedef jint (JNICALL *CreateJavaVM_t)(JavaVM * *pvm, void **penv, void *args);
     CreateJavaVM_t CreateJavaVM_func = (CreateJavaVM_t) GetProcAddress(jvmHandle, "JNI_CreateJavaVM");
 
     if (!CreateJavaVM_func) {
@@ -595,7 +598,7 @@ void showJarInfo(const std::wstring &mainClass, const uint32_t javaVersion, cons
     info << L"Java 版本: " << (javaVer.empty() ? L"未指定" : javaVer) << L"\n";
     info << L"时间戳: " << timestamp << L"\n";
     info << L"启动模式: " << (launchMode == JarCommon::LaunchMode::DirectJVM ? L"direct_jvm" : JarCommon::JAVA_EXE_NAME)
-         << L"\n";
+            << L"\n";
     info << L"主类: " << (mainClass.empty() ? L"未指定" : mainClass) << L"\n";
     info << L"Java 路径: " << (javaPath.empty() ? L"未指定" : javaPath) << L"\n";
     info << L"Splash 图片大小: " << splashImageSize << L" 字节\n";
@@ -669,8 +672,22 @@ void updateSplashProgress(SplashScreen *splash, int launchTime) {
     }
 }
 
+
+void SetDpiAwarenessIfNeeded() {
+    typedef BOOL (WINAPI *SetProcessDpiAwarenessContext_t)(DPI_AWARENESS_CONTEXT);
+    if (IsWindows10OrGreater()) // 注意：这个宏实际检查主版本号 >= 10
+    {
+        if (HMODULE hUser32 = GetModuleHandleW(L"user32.dll")) {
+            if (auto pfn = reinterpret_cast<SetProcessDpiAwarenessContext_t>(GetProcAddress(
+                hUser32, "SetProcessDpiAwarenessContext"))) {
+                pfn(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+            }
+        }
+    }
+}
+
 int wmain(int argc, wchar_t *argv[]) {
-    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+    SetDpiAwarenessIfNeeded();
     SetConsoleOutputCP(CP_UTF8);
     _setmode(_fileno(stdout), _O_U8TEXT);
 
@@ -758,7 +775,8 @@ int wmain(int argc, wchar_t *argv[]) {
             }
 
             // 根据启动模式启动JAR
-            if (launchMode == JarCommon::LaunchMode::DirectJVM) { // direct_jvm
+            if (launchMode == JarCommon::LaunchMode::DirectJVM) {
+                // direct_jvm
                 std::filesystem::path jvmDllPath;
 
                 // 优先在 javaPath 下找 server/client jvm.dll
@@ -802,8 +820,8 @@ int wmain(int argc, wchar_t *argv[]) {
                         return 1;
                     }
                 }
-
-            } else { // java.exe 模式
+            } else {
+                // java.exe 模式
                 std::filesystem::path javaExePath = std::filesystem::path(javaPath) / JarCommon::JAVA_EXE_NAME;
 
                 if (!std::filesystem::exists(javaExePath)) {
@@ -821,13 +839,13 @@ int wmain(int argc, wchar_t *argv[]) {
             return 0;
         });
 
-        if (imageSize > 0) {
+        if (imageSize > 0 && IsWindows10OrGreater()) {
             if (const auto imageData = loadImageFromExe(executablePath, jarOffset + jarSize, imageSize);
                 !imageData.empty()) {
                 const auto splash = new SplashScreen(
-                        imageData, splashProgramName, splashProgramVersion, splashShowProgress, splashShowProgressText,
-                        titlePosX, titlePosY, versionPosX, versionPosY, statusPosX, statusPosY, titleFontSizePercent,
-                        versionFontSizePercent, statusFontSizePercent);
+                    imageData, splashProgramName, splashProgramVersion, splashShowProgress, splashShowProgressText,
+                    titlePosX, titlePosY, versionPosX, versionPosY, statusPosX, statusPosY, titleFontSizePercent,
+                    versionFontSizePercent, statusFontSizePercent);
                 splash->Show();
                 updateSplashProgress(splash, launchTime);
                 splash->Close();
@@ -835,7 +853,6 @@ int wmain(int argc, wchar_t *argv[]) {
         }
         t.join();
         return 0;
-
     } catch (const std::exception &e) {
         showError(L"程序异常: " + utf8ToWstring(e.what()));
         return 1;
