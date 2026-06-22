@@ -2,6 +2,7 @@
 #define NOMINMAX
 #include <cstdint>
 #include <cstdio>
+#include <utility>
 #include <fcntl.h>
 #include <io.h>
 #include <jni.h>
@@ -29,6 +30,39 @@ struct EndOfCentralDirectory {
     uint16_t commentLength;
 };
 #pragma pack(pop)
+
+class SplashGuard {
+private:
+    bool m_shouldExit = false;
+    std::mutex m_mutex{};
+    std::shared_ptr<SplashScreen> m_splashScreen = nullptr;
+
+public:
+    ~SplashGuard() {
+        closeSplash();
+    }
+
+    void closeSplash() {
+        std::lock_guard lock(m_mutex);
+        m_shouldExit = true;
+        if (m_splashScreen != nullptr) {
+            m_splashScreen->Hide();
+            m_splashScreen = nullptr;
+        }
+    }
+
+    bool initSplash(std::shared_ptr<SplashScreen> splashScreen) {
+        std::lock_guard lock(m_mutex);
+        if (m_shouldExit)return false;
+        m_splashScreen = std::move(splashScreen);
+        if (m_splashScreen) {
+            m_splashScreen->Show();
+        }
+        return true;
+    }
+};
+
+static SplashGuard splashGuard{};
 
 // 查找 ZIP 文件的 End of Central Directory 记录
 static std::expected<size_t, std::wstring> findEOCD(const std::vector<uint8_t> &data) {
@@ -630,7 +664,17 @@ void showJarInfo(const std::wstring &mainClass, const uint32_t javaVersion, cons
     MessageBoxW(nullptr, info.str().c_str(), L"JAR 信息", MB_OK | MB_ICONINFORMATION);
 }
 
-void showError(const std::wstring &message) { MessageBoxW(nullptr, message.c_str(), L"错误", MB_OK | MB_ICONERROR); }
+void showError(const std::wstring &message, const bool sync = false) {
+    if (sync) {
+        MessageBoxW(nullptr, message.c_str(), L"错误", MB_OK | MB_ICONERROR);
+    }else {
+        std::thread t([message] {
+            MessageBoxW(nullptr, message.c_str(), L"错误", MB_OK | MB_ICONERROR);
+            exit(-1);
+        });
+        t.detach();
+    }
+}
 
 std::vector<char> loadImageFromExe(const std::wstring &exePath, const uint64_t imgOffset, const uint64_t imageSize) {
     std::vector<char> imageData;
@@ -656,12 +700,13 @@ std::vector<char> loadImageFromExe(const std::wstring &exePath, const uint64_t i
     return imageData;
 }
 
-void updateSplashProgress(SplashScreen *splash, int launchTime) {
+void updateSplashProgress(const std::shared_ptr<SplashScreen> &splash, int launchTime) {
+    if (splash == nullptr)return;
     constexpr DWORD interval = 20;
     if (launchTime <= 0) {
         launchTime = 10000;
     }
-    double step = 100.0 / launchTime * interval;
+    const double step = 100.0 / launchTime * interval;
     splash->StartAutoProgress(step, interval);
     splash->SetAutoCloseDelay(launchTime * 1.5);
 
@@ -748,10 +793,15 @@ int wmain(int argc, wchar_t *argv[]) {
         // 将命令行参数添加到程序参数列表（从第二个参数开始，因为第一个是程序名）
         // 这样当通过文件关联启动时，被打开的文件路径会传递给 Java 程序
         for (int i = 1; i < argc; ++i) {
-            programArgs.push_back(argv[i]);
+            programArgs.emplace_back(argv[i]);
         }
 
         std::thread t([&] {
+            struct Defer {
+                ~Defer() {
+                    splashGuard.closeSplash();
+                }
+            } defer{};
             // 检查并提取JAR文件
             auto fileStem = std::filesystem::path(executablePath.c_str()).stem().wstring();
             bool needExtract = true;
@@ -797,7 +847,7 @@ int wmain(int argc, wchar_t *argv[]) {
                 }
 
                 if (jvmDllPath.empty()) {
-                    showError(L"未找到 jvm.dll，正在尝试使用 java.exe 模式...");
+                    showError(L"未找到 jvm.dll，正在尝试使用 java.exe 模式...", false);
 
                     std::filesystem::path javaExePath = std::filesystem::path(javaPath) / JarCommon::JAVA_EXE_NAME;
 
@@ -842,13 +892,14 @@ int wmain(int argc, wchar_t *argv[]) {
         if (imageSize > 0 && IsWindows10OrGreater()) {
             if (const auto imageData = loadImageFromExe(executablePath, jarOffset + jarSize, imageSize);
                 !imageData.empty()) {
-                const auto splash = new SplashScreen(
-                    imageData, splashProgramName, splashProgramVersion, splashShowProgress, splashShowProgressText,
-                    titlePosX, titlePosY, versionPosX, versionPosY, statusPosX, statusPosY, titleFontSizePercent,
-                    versionFontSizePercent, statusFontSizePercent);
-                splash->Show();
-                updateSplashProgress(splash, launchTime);
-                splash->Close();
+                const auto splash = std::make_shared<SplashScreen>(imageData, splashProgramName, splashProgramVersion,
+                                                                   splashShowProgress, splashShowProgressText,
+                                                                   titlePosX, titlePosY, versionPosX, versionPosY,
+                                                                   statusPosX, statusPosY, titleFontSizePercent,
+                                                                   versionFontSizePercent, statusFontSizePercent);
+                if (splashGuard.initSplash(splash)) {
+                    updateSplashProgress(splash, launchTime);
+                }
             }
         }
         t.join();

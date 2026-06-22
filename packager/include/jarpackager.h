@@ -83,6 +83,11 @@ class Packager {
     ~Packager() = delete;
 
 public:
+    struct PackageResult {
+        QString outputPath;
+        QString zipError;
+    };
+
     struct Config {
         QByteArray exeData;
         QString jarPath;
@@ -122,17 +127,39 @@ public:
                const JarCommon::LaunchMode launchMode_, const QString &iconPath_, const bool showConsole_,
                float titlePosX_, float titlePosY_, float versionPosX_, float versionPosY_, float statusPosX_,
                float statusPosY_, float titleFontSizePercent_, float versionFontSizePercent_,
-               float statusFontSizePercent_, const bool requireAdmin_) :
-            exeData(exeData_), jarPath(jarPath_), splashImagePath(splashImagePath_),
-            splashShowProgress(splashShowProgress_), splashShowProgressText(splashShowProgressText_),
-            launchTime(launchTime_), javaVersion(javaVersion_), outputPath(outputPath_), mainClass(mainClass_),
-            jvmArgs(jvmArgs_), programArgs(programArgs_), javaPath(javaPath_), jarExtractPath(jarExtractPath_),
-            splashProgramName(splashProgramName_), splashProgramVersion(splashProgramVersion_), launchMode(launchMode_),
-            iconPath(iconPath_), showConsole(showConsole_), titlePosX(titlePosX_), titlePosY(titlePosY_),
-            versionPosX(versionPosX_), versionPosY(versionPosY_), statusPosX(statusPosX_), statusPosY(statusPosY_),
-            titleFontSizePercent(titleFontSizePercent_), versionFontSizePercent(versionFontSizePercent_),
-            statusFontSizePercent(statusFontSizePercent_), requireAdmin(requireAdmin_) {}
+               float statusFontSizePercent_, const bool requireAdmin_) : exeData(exeData_), jarPath(jarPath_),
+                                                                         splashImagePath(splashImagePath_),
+                                                                         splashShowProgress(splashShowProgress_),
+                                                                         splashShowProgressText(
+                                                                             splashShowProgressText_),
+                                                                         launchTime(launchTime_),
+                                                                         javaVersion(javaVersion_),
+                                                                         outputPath(outputPath_), mainClass(mainClass_),
+                                                                         jvmArgs(jvmArgs_), programArgs(programArgs_),
+                                                                         javaPath(javaPath_),
+                                                                         jarExtractPath(jarExtractPath_),
+                                                                         splashProgramName(splashProgramName_),
+                                                                         splashProgramVersion(splashProgramVersion_),
+                                                                         launchMode(launchMode_),
+                                                                         iconPath(iconPath_), showConsole(showConsole_),
+                                                                         titlePosX(titlePosX_), titlePosY(titlePosY_),
+                                                                         versionPosX(versionPosX_),
+                                                                         versionPosY(versionPosY_),
+                                                                         statusPosX(statusPosX_),
+                                                                         statusPosY(statusPosY_),
+                                                                         titleFontSizePercent(titleFontSizePercent_),
+                                                                         versionFontSizePercent(
+                                                                             versionFontSizePercent_),
+                                                                         statusFontSizePercent(statusFontSizePercent_),
+                                                                         requireAdmin(requireAdmin_) {
+        }
     };
+
+    static std::expected<PackageResult, QString> packageFromConfigFile(const QString &configPath,
+                                                                       const QString &applicationFilePath);
+
+    static std::expected<PackageResult, QString> packageFromConfig(const PackageConfig &config,
+                                                                   const QString &applicationFilePath);
 
     static std::expected<bool, QString> packageJar(const Config &config);
 
@@ -219,7 +246,7 @@ private slots:
 protected:
     void closeEvent(QCloseEvent *event) override;
 
-    void showEvent(QShowEvent* event) override;
+    void showEvent(QShowEvent *event) override;
 
     void resizeEvent(QResizeEvent *event) override;
 
