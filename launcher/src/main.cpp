@@ -500,6 +500,11 @@ std::expected<bool, std::wstring> launchWithJvmDll(const std::wstring &jvmPath, 
                                                    const unsigned int javaVersion, const std::wstring &mainClass,
                                                    const std::vector<std::wstring> &jvmArgs,
                                                    const std::vector<std::wstring> &programArgs) {
+    std::filesystem::path jvmDllPath = jvmPath;
+    std::filesystem::path jvmDir = jvmDllPath.parent_path();
+    std::filesystem::path jreBin = jvmDir.parent_path();
+
+    SetDllDirectoryW(jreBin.wstring().c_str());
     const HMODULE jvmHandle = LoadLibraryW(jvmPath.c_str());
     if (!jvmHandle) {
         return std::unexpected{L"无法加载JVM动态库"};
@@ -579,11 +584,133 @@ std::expected<bool, std::wstring> launchWithJvmDll(const std::wstring &jvmPath, 
     env->CallStaticVoidMethod(mainClassObj, mainMethod, javaArgs);
 
     if (env->ExceptionCheck()) {
-        env->ExceptionDescribe();
-        jvm->DestroyJavaVM();
-        FreeLibrary(jvmHandle);
-        return std::unexpected{L"Java程序执行时发生异常"};
+    jthrowable ex = env->ExceptionOccurred();
+    env->ExceptionClear();
+
+    std::wstring error = L"Java程序执行时发生异常";
+
+    if (ex) {
+        jclass stringWriterClass = env->FindClass("java/io/StringWriter");
+        jclass printWriterClass = env->FindClass("java/io/PrintWriter");
+        jclass throwableClass = env->FindClass("java/lang/Throwable");
+
+        if (stringWriterClass && printWriterClass && throwableClass) {
+            jmethodID stringWriterCtor = env->GetMethodID(
+                stringWriterClass,
+                "<init>",
+                "()V"
+            );
+
+            jmethodID printWriterCtor = env->GetMethodID(
+                printWriterClass,
+                "<init>",
+                "(Ljava/io/Writer;)V"
+            );
+
+            jmethodID printStackTraceMethod = env->GetMethodID(
+                throwableClass,
+                "printStackTrace",
+                "(Ljava/io/PrintWriter;)V"
+            );
+
+            jmethodID toStringMethod = env->GetMethodID(
+                stringWriterClass,
+                "toString",
+                "()Ljava/lang/String;"
+            );
+
+            if (stringWriterCtor &&
+                printWriterCtor &&
+                printStackTraceMethod &&
+                toStringMethod) {
+
+                jobject stringWriter = env->NewObject(
+                    stringWriterClass,
+                    stringWriterCtor
+                );
+
+                if (stringWriter) {
+                    jobject printWriter = env->NewObject(
+                        printWriterClass,
+                        printWriterCtor,
+                        stringWriter
+                    );
+
+                    if (printWriter) {
+                        env->CallVoidMethod(
+                            ex,
+                            printStackTraceMethod,
+                            printWriter
+                        );
+
+                        jstring stackTrace = static_cast<jstring>(
+                            env->CallObjectMethod(
+                                stringWriter,
+                                toStringMethod
+                            )
+                        );
+
+                        if (stackTrace) {
+                            const char* utf = env->GetStringUTFChars(stackTrace, nullptr);
+                            if (utf) {
+                                int len = MultiByteToWideChar(
+                                    CP_UTF8,
+                                    0,
+                                    utf,
+                                    -1,
+                                    nullptr,
+                                    0
+                                );
+
+                                if (len > 0) {
+                                    std::wstring wmsg(len - 1, L'\0');
+
+                                    MultiByteToWideChar(
+                                        CP_UTF8,
+                                        0,
+                                        utf,
+                                        -1,
+                                        wmsg.data(),
+                                        len
+                                    );
+
+                                    error = wmsg;
+                                }
+
+                                env->ReleaseStringUTFChars(stackTrace, utf);
+                            }
+
+                            env->DeleteLocalRef(stackTrace);
+                        }
+
+                        env->DeleteLocalRef(printWriter);
+                    }
+
+                    env->DeleteLocalRef(stringWriter);
+                }
+            }
+        }
+
+        if (throwableClass) {
+            env->DeleteLocalRef(throwableClass);
+        }
+
+        if (printWriterClass) {
+            env->DeleteLocalRef(printWriterClass);
+        }
+
+        if (stringWriterClass) {
+            env->DeleteLocalRef(stringWriterClass);
+        }
+
+        env->DeleteLocalRef(ex);
     }
+
+    jvm->DestroyJavaVM();
+    FreeLibrary(jvmHandle);
+
+    return std::unexpected{error};
+}
 
     jvm->DestroyJavaVM();
     FreeLibrary(jvmHandle);
